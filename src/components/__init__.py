@@ -2,12 +2,12 @@
 # Contains all component implementations for the agent framework
 
 from .context_manager import (
+    SYSTEM_PROMPT_TEMPLATES,
     ContextManager,
     DictToXMLFormatter,
     MarkdownFormatter,
     MetaData,
     SystemPromptTemplate,
-    SYSTEM_PROMPT_TEMPLATES,
     TemplateRegistry,
 )
 from .lifecycle import LifeCycleManager
