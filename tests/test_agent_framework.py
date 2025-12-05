@@ -990,7 +990,7 @@ def test_meta_custom_fields_interpolation():
                 "project": "{meta.custom.project}"
             }
         })
-        print(f"     ✓ Added content with {meta.custom.field} placeholders")
+        print(f"     ✓ Added content with {{meta.custom.field}} placeholders")
 
         print_test_step(3, "Verifying interpolation in simple strings")
         raw = context.get_raw_context()
@@ -1055,41 +1055,39 @@ def test_template_override():
         print(f"     ✓ Template created with identity and config sections")
         print(f"     ✓ Original identity: name=OriginalBot, role=Original Role")
 
-        print_test_step(2, "Overriding identity section completely")
+        print_test_step(2, "Adding to identity section (deep merge behavior)")
         context.add("identity", {
             "name": "OverrideBot",
             "custom_field": "This is new"
         })
-        print(f"     ✓ Added new identity (should replace, not merge)")
+        print(f"     ✓ Added new identity fields (will deep merge with template)")
 
-        print_test_step(3, "Verifying complete override")
+        print_test_step(3, "Verifying deep merge behavior")
         raw = context.get_raw_context()
 
         # New values should exist
         assert raw["identity"]["name"] == "OverrideBot", "Name should be overridden"
         assert raw["identity"]["custom_field"] == "This is new", "New field should exist"
-        print(f"     ✓ New values present: name=OverrideBot, custom_field exists")
+        print(f"     ✓ New/overridden values: name=OverrideBot, custom_field exists")
 
-        # Old values should NOT exist (complete replacement)
-        assert "role" not in raw["identity"], "Old 'role' should not exist (was replaced)"
-        assert "description" not in raw["identity"], "Old 'description' should not exist (was replaced)"
-        print(f"     ✓ Old values removed: role and description gone")
+        # Deep merge preserves original values that weren't overridden
+        assert raw["identity"]["role"] == "Original Role", "Deep merge preserves non-overridden fields"
+        assert raw["identity"]["description"] == "Original description", "Deep merge preserves non-overridden fields"
+        print(f"     ✓ Original values preserved: role and description still exist (deep merge)")
 
         print_test_step(4, "Verifying other sections untouched")
         assert raw["config"]["mode"] == "standard", "Untouched config should remain"
         assert raw["config"]["level"] == 1, "Untouched config should remain"
         print(f"     ✓ Other sections preserved: config intact")
 
-        print_test_step(5, "Testing partial override (merge behavior)")
-        # When we want to merge, we need to get current value first
-        current_config = raw["config"].copy()
-        current_config["new_setting"] = "added"
-        context.add("config", current_config)
+        print_test_step(5, "Testing additive merge")
+        # Add new field to config
+        context.add("config", {"new_setting": "added"})
 
         raw = context.get_raw_context()
         assert raw["config"]["mode"] == "standard", "Original mode preserved"
         assert raw["config"]["new_setting"] == "added", "New setting added"
-        print(f"     ✓ Partial override (manual merge) working")
+        print(f"     ✓ Additive merge working: new_setting added, originals preserved")
 
         print_test_result(True, "Template override working correctly")
         return True
