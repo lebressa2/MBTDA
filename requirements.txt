@@ -1,0 +1,20 @@
+# Agent Framework Dependencies
+
+# Core
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# LangChain (for LLM providers)
+langchain>=0.1.0
+langchain-groq>=0.1.0
+langchain-google-genai>=0.1.0
+langchain-community>=0.1.0
+langgraph>=0.1.0
+
+# Utilities
+psutil>=5.9.0
+rich>=13.0.0
+watchdog>=3.0.0
+websockets>=12.0
+litellm>=1.0.0
+instructor>=0.4.0
