@@ -18,3 +18,18 @@ watchdog>=3.0.0
 websockets>=12.0
 litellm>=1.0.0
 instructor>=0.4.0
+
+# =============================================================================
+# 🧪 DESENVOLVIMENTO & TESTES
+# =============================================================================
+# Essas dependências são usadas para desenvolvimento e CI/CD.
+# Em produção, você pode omiti-las.
+# =============================================================================
+
+# Testes
+pytest>=7.4.0           # Framework de testes
+pytest-cov>=4.1.0       # Cobertura de código
+pytest-asyncio>=0.21.0  # Suporte para testes async
+
+# Linting & Formatação
+ruff>=0.1.0             # Linter + Formatter (substitui flake8, black, isort)

@@ -1,0 +1,137 @@
+# =============================================================================
+# 🔧 CONFIGURAÇÃO DO RUFF (Linter/Formatter Python)
+# =============================================================================
+#
+# 📖 O QUE É RUFF?
+# Ruff é uma ferramenta MUITO rápida que:
+#   1. Verifica erros no código (linting)
+#   2. Formata código automaticamente (formatting)
+#   3. Organiza imports
+#
+# 🚀 COMO USAR?
+#   ruff check src/      → Verifica problemas
+#   ruff format src/     → Formata código
+#   ruff check --fix     → Corrige problemas automaticamente
+#
+# 📚 DOCUMENTAÇÃO: https://docs.astral.sh/ruff/
+# =============================================================================
+
+[tool.ruff]
+# Versão do Python alvo
+target-version = "py311"
+
+# Tamanho máximo de linha (padrão PEP 8 = 79, mas 100 é mais prático)
+line-length = 100
+
+# Pastas para verificar
+include = ["src/**/*.py", "tests/**/*.py"]
+
+# Pastas para ignorar
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.pyc",
+]
+
+# =============================================================================
+# REGRAS DE LINTING
+# =============================================================================
+# Cada letra representa uma categoria de regras:
+#   E = Erros de sintaxe (pycodestyle)
+#   F = Erros lógicos (Pyflakes)
+#   W = Warnings (avisos)
+#   I = Imports (isort)
+#   UP = Upgrade (sugere sintaxe mais moderna)
+#   B = Bugbear (bugs comuns)
+#   SIM = Simplify (simplificações)
+# =============================================================================
+
+[tool.ruff.lint]
+select = [
+    "E",      # Erros de estilo (pycodestyle errors)
+    "F",      # Erros lógicos (Pyflakes)
+    "W",      # Warnings (pycodestyle warnings)
+    "I",      # Imports não organizados (isort)
+    "UP",     # Código desatualizado (pyupgrade)
+    "B",      # Bugs comuns (flake8-bugbear)
+    "SIM",    # Código que pode ser simplificado
+]
+
+# Regras para IGNORAR (não reportar erro)
+ignore = [
+    "E501",   # Linha muito longa (preferimos line-length global)
+    "B008",   # Argumento padrão mutável em função (comum em FastAPI)
+]
+
+# Permitir correções automáticas para todas essas categorias
+fixable = ["ALL"]
+
+# =============================================================================
+# REGRAS POR TIPO DE ARQUIVO
+# =============================================================================
+
+[tool.ruff.lint.per-file-ignores]
+# Em arquivos de teste, é OK ter imports não usados (fixtures do pytest)
+"tests/**/*.py" = ["F401", "F811"]
+# Em __init__.py, é OK ter imports não usados (re-exportação)
+"__init__.py" = ["F401"]
+
+# =============================================================================
+# ORGANIZAÇÃO DE IMPORTS (isort)
+# =============================================================================
+
+[tool.ruff.lint.isort]
+# Agrupa imports em seções
+known-first-party = ["src"]
+section-order = [
+    "future",          # from __future__ import ...
+    "standard-library", # import os, sys, etc.
+    "third-party",     # import pydantic, langchain, etc.
+    "first-party",     # import src.agent, etc. (seu código)
+    "local-folder",    # from . import algo
+]
+
+# =============================================================================
+# FORMATAÇÃO (substitui Black)
+# =============================================================================
+
+[tool.ruff.format]
+# Usa aspas duplas para strings (padrão Python)
+quote-style = "double"
+
+# Indentação com espaços (não tabs)
+indent-style = "space"
+
+# Mantém "magic trailing comma" (útil para diffs do git)
+skip-magic-trailing-comma = false
+
+# =============================================================================
+# CONFIGURAÇÃO DO PYTEST
+# =============================================================================
+
+[tool.pytest.ini_options]
+# Onde procurar testes
+testpaths = ["tests"]
+
+# Markers (tags) para organizar testes
+markers = [
+    "unit: Testes unitários rápidos (sem APIs reais)",
+    "integration: Testes com APIs reais",
+    "e2e: Testes end-to-end completos",
+    "slow: Testes que demoram >10 segundos",
+]
+
+# Opções padrão ao rodar pytest
+addopts = [
+    "-v",                    # Verbose
+    "--tb=short",            # Traceback curto
+    "-ra",                   # Mostra resumo de todos os resultados
+    "--strict-markers",      # Erro se usar marker não definido
+]
+
+# Ignora warnings específicos (menos spam no output)
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
