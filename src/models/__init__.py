@@ -2,13 +2,13 @@
 # Contains all Pydantic models for the agent framework
 
 from .data_models import (
-    EmailMessage,
-    TaskItem,
-    ProtocolStep,
-    Protocol,
-    Transition,
-    AgentState,
     AgentEvent,
+    AgentState,
+    EmailMessage,
+    Protocol,
+    ProtocolStep,
+    TaskItem,
+    Transition,
 )
 
 __all__ = [

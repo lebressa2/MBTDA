@@ -1,0 +1,128 @@
+# =============================================================================
+# 🧪 WORKFLOW DE TESTES AUTOMATIZADOS
+# =============================================================================
+# 
+# 📖 O QUE ESSE ARQUIVO FAZ?
+# Este arquivo diz ao GitHub: "Toda vez que alguém fizer push ou abrir um PR,
+# execute esses comandos automaticamente".
+#
+# 🔍 ONDE VER OS RESULTADOS?
+# No GitHub: Aba "Actions" do seu repositório
+#
+# 💡 DICA: Linhas começando com # são comentários (ignoradas pelo sistema)
+# =============================================================================
+
+name: "🧪 Testes Automatizados"  # Nome que aparece no GitHub
+
+# =============================================================================
+# QUANDO ESSE WORKFLOW DEVE RODAR?
+# =============================================================================
+on:
+  # Quando alguém fizer PUSH para essas branches:
+  push:
+    branches: 
+      - main      # Branch de produção
+      - develop   # Branch de desenvolvimento
+  
+  # Quando alguém abrir/atualizar um PULL REQUEST para essas branches:
+  pull_request:
+    branches: 
+      - main
+      - develop
+
+# =============================================================================
+# O QUE FAZER QUANDO O WORKFLOW RODAR?
+# =============================================================================
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1: TESTES UNITÁRIOS
+  # ---------------------------------------------------------------------------
+  # Um "job" é um conjunto de passos que rodam em uma máquina virtual.
+  # Cada job roda de forma isolada (máquina limpa, sem nada instalado).
+  # ---------------------------------------------------------------------------
+  
+  test:
+    name: "🔬 Rodar Testes"
+    
+    # Em qual sistema operacional rodar?
+    # Opções: ubuntu-latest, windows-latest, macos-latest
+    runs-on: ubuntu-latest
+    
+    # Passos a executar (em ordem):
+    steps:
+      # -----------------------------------------------------------------------
+      # PASSO 1: Baixar o código do repositório
+      # -----------------------------------------------------------------------
+      # Sem isso, a máquina virtual está vazia!
+      # "uses" significa "use uma action pronta feita por alguém"
+      # -----------------------------------------------------------------------
+      - name: "📥 Baixar código do repositório"
+        uses: actions/checkout@v4
+      
+      # -----------------------------------------------------------------------
+      # PASSO 2: Instalar Python
+      # -----------------------------------------------------------------------
+      # A máquina virtual vem com Python, mas queremos uma versão específica.
+      # -----------------------------------------------------------------------
+      - name: "🐍 Instalar Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      # -----------------------------------------------------------------------
+      # PASSO 3: Instalar dependências do projeto
+      # -----------------------------------------------------------------------
+      # "run" significa "execute esse comando no terminal"
+      # O "|" permite múltiplas linhas de comando
+      # -----------------------------------------------------------------------
+      - name: "📦 Instalar dependências"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      # -----------------------------------------------------------------------
+      # PASSO 4: Rodar os testes
+      # -----------------------------------------------------------------------
+      # pytest: ferramenta que roda testes em Python
+      # -v: modo verbose (mostra detalhes)
+      # --tb=short: traceback curto em caso de erro
+      # -----------------------------------------------------------------------
+      - name: "🧪 Executar testes"
+        run: |
+          pytest tests/ -v --tb=short
+        # Se os testes falharem, o workflow falha e você é notificado!
+
+  # ---------------------------------------------------------------------------
+  # JOB 2: VERIFICAR QUALIDADE DO CÓDIGO (LINTING)
+  # ---------------------------------------------------------------------------
+  # Linting = verificar se o código segue boas práticas
+  # Exemplo: variáveis não usadas, imports desnecessários, etc.
+  # ---------------------------------------------------------------------------
+  
+  lint:
+    name: "✨ Verificar Qualidade do Código"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: "📥 Baixar código"
+        uses: actions/checkout@v4
+      
+      - name: "🐍 Instalar Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: "📦 Instalar ferramentas de linting"
+        run: |
+          pip install ruff
+      
+      # -----------------------------------------------------------------------
+      # Ruff: ferramenta moderna e RÁPIDA para verificar código Python
+      # Substitui: flake8, isort, pyupgrade, e outros
+      # -----------------------------------------------------------------------
+      - name: "🔍 Verificar código com Ruff"
+        run: |
+          ruff check src/ --output-format=github
+        # --output-format=github: formata erros de forma que o GitHub entende
+        # e mostra inline no código do PR!
