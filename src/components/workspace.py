@@ -14,12 +14,16 @@ from ..interfaces.base import IWorkspaceManager
 class WorkspaceManager(IWorkspaceManager):
     """Manages the isolated workspace environment for the agent."""
 
-    def __init__(self, base_path: str):
+    # Flag to enable/disable automatic context injection (default: True)
+    inject_context: bool = True
+
+    def __init__(self, base_path: str, inject_context: bool = True):
         self.base_path = Path(base_path).resolve()
         self.base_path.mkdir(parents=True, exist_ok=True)
         self._snapshots: dict[str, dict] = {}
         self._audit_log: list[dict] = []
         self._storage_limit: int = 1024 * 1024 * 1024  # 1GB default
+        self.inject_context = inject_context
 
     def _log_action(self, action: str, path: str, success: bool) -> None:
         self._audit_log.append({
@@ -122,3 +126,24 @@ class WorkspaceManager(IWorkspaceManager):
 
     def get_audit_log(self) -> list[dict[str, Any]]:
         return list(self._audit_log)
+
+    def get_context_contribution(self) -> dict[str, Any]:
+        """
+        Get workspace context for injection into the agent's system prompt.
+        
+        Returns:
+            dict with 'workspace' key containing base path and file list
+        """
+        try:
+            files = self.list_directory(".")
+        except Exception:
+            files = []
+        
+        return {
+            "workspace": {
+                "base_path": str(self.base_path),
+                "files": files[:20],  # Limit to first 20 files
+                "storage": self.get_storage_usage()
+            }
+        }
+
