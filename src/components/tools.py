@@ -10,9 +10,13 @@ from ..interfaces.base import IToolManager
 class ToolManager(IToolManager):
     """Manages tool registration and execution."""
 
-    def __init__(self):
+    # Flag to enable/disable automatic context injection (default: True)
+    inject_context: bool = True
+
+    def __init__(self, inject_context: bool = True):
         self._tools: dict[str, dict[str, Any]] = {}  # tool_name -> {tool, context, description}
         self._contexts: dict[str, list[str]] = {}  # context -> [tool_names]
+        self.inject_context = inject_context
 
     def register_tool(self, context: str, tool: Any) -> None:
         tool_name = getattr(tool, 'name', str(tool))
@@ -59,3 +63,18 @@ class ToolManager(IToolManager):
         elif callable(tool):
             return tool(**kwargs)
         raise ValueError(f"Tool '{tool_name}' is not callable")
+
+    def get_context_contribution(self) -> dict[str, Any]:
+        """
+        Get tools context for injection into the agent's system prompt.
+        
+        Returns:
+            dict with 'available_tools' key containing tool descriptions
+        """
+        if not self._tools:
+            return {}
+        
+        return {
+            "available_tools": self.get_tool_descriptions()
+        }
+

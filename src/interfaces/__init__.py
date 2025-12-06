@@ -2,6 +2,7 @@
 # Contains all abstract base classes (protocols) for the agent framework
 
 from .base import (
+    IContextProvider,
     IFormatter,
     IInboxClient,
     ILifeCycle,
@@ -15,6 +16,7 @@ from .base import (
 )
 
 __all__ = [
+    "IContextProvider",
     "ITextClient",
     "IFormatter",
     "IMemoryManager",

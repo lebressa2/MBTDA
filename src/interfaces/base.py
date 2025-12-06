@@ -23,6 +23,53 @@ class LogLevel(Enum):
 
 
 # ==============================================================================
+# CONTEXT PROVIDER INTERFACE (Base for context-injecting components)
+# ==============================================================================
+
+class IContextProvider(ABC):
+    """
+    Base interface for components that contribute to the agent's context.
+    
+    Components implementing this interface can automatically inject their
+    context into the agent's system prompt. The Agent will collect all
+    contributions and merge them into the final context.
+    
+    Attributes:
+        inject_context: Flag to enable/disable automatic context injection.
+                       Defaults to True.
+    
+    Example:
+        class MyComponent(IContextProvider):
+            inject_context: bool = True
+            
+            def get_context_contribution(self) -> dict[str, Any]:
+                return {
+                    "my_component": {
+                        "status": "active",
+                        "data": self.get_data()
+                    }
+                }
+    """
+    
+    # Flag to enable/disable context injection (default: True)
+    inject_context: bool = True
+    
+    @abstractmethod
+    def get_context_contribution(self) -> dict[str, Any]:
+        """
+        Get the context contribution from this component.
+        
+        Returns a dictionary that will be deep-merged into the agent's
+        context. The structure should be designed to avoid key collisions
+        with other components.
+        
+        Returns:
+            dict[str, Any]: Context dictionary to be merged
+        """
+        pass
+
+
+# ==============================================================================
 # CORE INTERFACES
 # ==============================================================================
 
@@ -89,12 +136,15 @@ class IFormatter(ABC):
         pass
 
 
-class IMemoryManager(ABC):
+class IMemoryManager(IContextProvider):
     """
     Interface for memory management.
 
     Handles short-term memory, long-term memory, and retrieval operations.
-    Populates the 'memory' key in the agent's context.
+    Automatically contributes to the agent's context via IContextProvider.
+    
+    The 'memory' key will be injected into the system prompt containing
+    recent messages and long-term memory keys.
     """
 
     @abstractmethod
@@ -122,18 +172,18 @@ class IMemoryManager(ABC):
         """Clear short-term memory."""
         pass
 
-    @abstractmethod
-    def get_memory_context(self) -> dict[str, Any]:
-        """Get the memory context for injection into the agent's prompt."""
-        pass
+    # get_context_contribution() is inherited from IContextProvider and must be implemented
 
 
-class IToolManager(ABC):
+class IToolManager(IContextProvider):
     """
     Interface for tool management.
 
     Handles tool registration, execution, and retrieval.
     Tools are organized by context/category.
+    
+    Automatically contributes available tools to the agent's context
+    via IContextProvider.
     """
 
     @abstractmethod
@@ -169,6 +219,8 @@ class IToolManager(ABC):
     def execute_tool(self, tool_name: str, **kwargs) -> Any:
         """Execute a tool by name with given arguments."""
         pass
+
+    # get_context_contribution() is inherited from IContextProvider and must be implemented
 
 
 class IWatchdog(ABC):
@@ -312,13 +364,16 @@ class ILifeCycle(ABC):
         pass
 
 
-class IWorkspaceManager(ABC):
+class IWorkspaceManager(IContextProvider):
     """
     Interface for workspace management.
 
     Manages the isolated environment (physical or virtual) where the agent works.
     Provides a controlled sandbox for file operations, version control,
     and computational environments.
+    
+    Automatically contributes workspace information to the agent's context
+    via IContextProvider (e.g., base path, available files, operations).
     """
 
     @abstractmethod
@@ -390,6 +445,8 @@ class IWorkspaceManager(ABC):
     def get_audit_log(self) -> list[dict[str, Any]]:
         """Get the audit log of all workspace actions."""
         pass
+
+    # get_context_contribution() is inherited from IContextProvider and must be implemented
 
 
 # ==============================================================================

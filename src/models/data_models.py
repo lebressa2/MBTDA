@@ -181,14 +181,67 @@ class Transition(BaseModel):
 
     Defines how the agent moves from one state to another,
     including conditions, triggers, and callback actions.
+    Example:
+        Transition(
+            source="IDLE",
+            target="THINKING",
+            trigger="input:user_message",
+            description="Inicia raciocínio quando usuário envia mensagem"
+        )
     """
-    source: str = Field(..., description="Source state name")
-    target: str = Field(..., description="Target state name")
-    trigger: str = Field(..., description="Event that triggers this transition")
-    condition: Any | None = Field(None, description="Callable condition that must be True")
-    on_exit: Any | None = Field(None, description="Callback to execute when leaving source state")
-    on_enter: Any | None = Field(None, description="Callback to execute when entering target state")
-    priority: int = Field(default=0, description="Priority for competing transitions")
+    source: str = Field(
+        ...,
+        description="Nome do estado de origem (ex: 'IDLE', 'THINKING', 'WORKING'). "
+                   "Estado a partir do qual a transição é disparada."
+    )
+    target: str = Field(
+        ...,
+        description="Nome do estado de destino (ex: 'IDLE', 'THINKING', 'WORKING'). "
+                   "Estado para o qual o agente irá transitar se a condição for satisfeita."
+    )
+    trigger: str = Field(
+        ...,
+        description="Evento que dispara a transição. Formato: 'categoria:ação' "
+                   "(ex: 'input:user_message', 'action:complete', 'process:start'). "
+                   "Definido pelo sistema ou pelas interfaces do agente."
+    )
+    condition: Any | None = Field(
+        default=None,
+        description="Função opcional que avalia se a transição pode acontecer. "
+                   "Recebe o agente como parâmetro. Ex: lambda ag: ag.has_task_pending(). "
+                   "Se None, transição sempre ocorre quando trigger for disparado."
+    )
+    on_exit: Any | None = Field(
+        default=None,
+        description="Função callback opcional executada ao SAIR do estado fonte. "
+                   "Recebe o agente como parâmetro. Útil para limpeza ou logging."
+    )
+    on_enter: Any | None = Field(
+        default=None,
+        description="Função callback opcional executada ao ENTRAR no estado destino. "
+                   "Recebe o agente como parâmetro. Útil para inicialização ou notificações."
+    )
+    priority: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="Prioridade da transição (0-100). Transições de maior prioridade são "
+                   "avaliadas primeiro quando múltiplos triggers ocorrem simultaneamente."
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "source": "IDLE",
+                "target": "THINKING",
+                "trigger": "input:user_message",
+                "condition": None,
+                "on_exit": None,
+                "on_enter": "lambda ag: print('Entrando em THINKING')",
+                "priority": 10,
+                "description": "Transição quando recebe mensagem do usuário"
+            }
+        }
 
     class Config:
         arbitrary_types_allowed = True
