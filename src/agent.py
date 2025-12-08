@@ -9,8 +9,7 @@ import json
 import time
 from typing import Any
 
-from .components.context_manager import ContextManager
-from .components.state_machine import StateMachine
+from .components import ContextManager, StateMachine
 from .interfaces.base import (
     IInboxClient,
     ILifeCycle,

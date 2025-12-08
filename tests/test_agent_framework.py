@@ -21,8 +21,8 @@ load_dotenv()
 from src.interfaces.base import ITextClient, LogLevel
 from src.agent import Agent
 from src.components import (
-    ContextManager, StateMachine, ConsoleLogger, 
-    InMemoryManager, ToolManager, WorkspaceManager, Watchdog
+    ContextManager, StateMachine, ConsoleLogger,
+    InMemoryManager, ToolManager, WorkspaceManager, LocalWorkspaceManager, Watchdog
 )
 from src.models import Protocol, ProtocolStep, AgentState
 
@@ -243,11 +243,17 @@ def test_agent_with_workspace():
         
         text_client = get_text_client()
         
-        # Create temporary workspace
-        workspace_path = tempfile.mkdtemp(prefix="agent_test_")
-        print(f"📁 Created temp workspace: {workspace_path}")
+        # Use local workspaces directory
+        workspaces_root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspaces")
+        print(f"📁 Using workspaces root: {workspaces_root}")
         
-        workspace = WorkspaceManager(base_path=workspace_path)
+        # workspace = WorkspaceManager(base_path=workspace_path)
+        workspace = LocalWorkspaceManager(agent_name="test_agent", base_path=workspaces_root)
+        print(f"📁 Workspace initialized at: {workspace.base_path}")
+        
+        # Ensure clean state for test
+        if os.path.exists(workspace.base_path):
+            shutil.rmtree(workspace.base_path)
         
         agent = DebugAgent(
             text_provider=text_client,
@@ -274,9 +280,10 @@ def test_agent_with_workspace():
         audit_log = workspace.get_audit_log()
         print(f"📋 Audit log has {len(audit_log)} entries")
         
-        # Cleanup
-        shutil.rmtree(workspace_path)
-        print(f"🗑️ Cleaned up workspace")
+        # Cleanup - COMMENTED OUT to allow user inspection
+        # shutil.rmtree(workspace.base_path)
+        # print(f"🗑️ Cleaned up workspace")
+        print(f"👀 Workspace left for inspection at: {workspace.base_path}")
         
         print("\n✅ Workspace Test PASSED")
         return True
@@ -415,9 +422,13 @@ def test_full_integration():
         tool_manager = ToolManager()
         logger = ConsoleLogger(min_level=LogLevel.INFO)
         
-        # Create temp workspace
-        workspace_path = tempfile.mkdtemp(prefix="agent_full_test_")
-        workspace = WorkspaceManager(base_path=workspace_path)
+        # Use local workspaces directory
+        workspaces_root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspaces")
+        workspace = LocalWorkspaceManager(agent_name="full_test_agent", base_path=workspaces_root)
+        
+        # Ensure clean state for test
+        if os.path.exists(workspace.base_path):
+            shutil.rmtree(workspace.base_path)
         
         from langchain_core.tools import StructuredTool
 
@@ -453,8 +464,9 @@ def test_full_integration():
         assert agent.get_current_state() == AgentState.IDLE.value
         assert len(memory.get_recent_messages()) >= 2  # User + Assistant messages
         
-        # Cleanup
-        shutil.rmtree(workspace_path)
+        # Cleanup - COMMENTED OUT to allow user inspection
+        # shutil.rmtree(workspace.base_path)
+        print(f"👀 Workspace left for inspection at: {workspace.base_path}")
         
         print("\n✅ Full Integration Test PASSED")
         return True

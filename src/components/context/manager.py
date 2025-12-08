@@ -12,8 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from ..interfaces.base import IFormatter
-from ..models.data_models import Protocol
+from ...interfaces.base import IFormatter
+from ...models.data_models import Protocol
 
 # ==============================================================================
 # METADATA MODEL FOR DYNAMIC VARIABLES
