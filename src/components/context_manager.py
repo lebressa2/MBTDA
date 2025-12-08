@@ -7,7 +7,7 @@ Supports protocols and dynamic context injection.
 
 from typing import Any
 
-from ..interfaces.base import IFormatter
+from ..interfaces.base import IFormatter, IContextProvider
 from ..models.data_models import Protocol
 
 
@@ -143,6 +143,9 @@ class MarkdownFormatter(IFormatter):
         return "\n".join(lines)
 
 
+
+
+
 class ContextManager:
     """
     Manages the agent's context for system prompt generation.
@@ -151,10 +154,13 @@ class ContextManager:
     that are formatted into the agent's system prompt. It also
     manages protocols that define structured procedures.
 
+    It acts as the "Context Renderer", pulling data from registered providers.
+
     Attributes:
         context: Dictionary of context key-value pairs
         protocols: Dictionary of registered Protocol objects
         formatter: IFormatter instance for formatting context
+        _providers: List of registered IContextProvider components
     """
 
     # Class-level default formatter
@@ -170,6 +176,7 @@ class ContextManager:
         self.context: dict[str, Any] = {}
         self.protocols: dict[str, Protocol] = {}
         self.formatter = formatter or self.base_formatter
+        self._providers: list[IContextProvider] = []
 
     # ==========================================================================
     # CONTEXT OPERATIONS
@@ -290,6 +297,20 @@ class ContextManager:
         return list(self.protocols.keys())
 
     # ==========================================================================
+    # PROVIDER OPERATIONS
+    # ==========================================================================
+
+    def register_provider(self, provider: IContextProvider) -> None:
+        """
+        Register a context provider.
+
+        Args:
+            provider: Component implementing IContextProvider
+        """
+        if provider not in self._providers:
+            self._providers.append(provider)
+
+    # ==========================================================================
     # FORMATTING OPERATIONS
     # ==========================================================================
 
@@ -297,8 +318,11 @@ class ContextManager:
         """
         Generate the system message from the current context.
 
-        This method combines all context elements and active protocols
-        into a formatted system prompt string.
+        This method acts as the "render" cycle:
+        1. Collects fresh state from all registered providers
+        2. Merges with static context
+        3. Resolves dynamic elements (like protocols)
+        4. Formats into string
 
         Args:
             formatter: Optional formatter to use (overrides instance formatter)
@@ -306,37 +330,55 @@ class ContextManager:
         Returns:
             str: Formatted system message
         """
+        full_context = self.get_raw_context()
         fmt = formatter or self.formatter
-
-        # Build the full context including protocols
-        full_context = dict(self.context)
-
-        # Add active protocols to context
-        if self.protocols:
-            protocols_data = {}
-            for name, protocol in self.protocols.items():
-                current_step = protocol.get_current_step()
-                protocols_data[name] = {
-                    "description": protocol.description,
-                    "current_step": current_step.name if current_step else "completed",
-                    "progress": f"{protocol.current_step_index + 1}/{len(protocol.steps)}",
-                    "current_instructions": current_step.instructions if current_step else []
-                }
-            full_context["active_protocols"] = protocols_data
-
         return fmt.format(full_context)
 
     def get_raw_context(self) -> dict[str, Any]:
         """
         Get the raw dictionary that forms the system prompt.
+        Collects data from all providers and merges with static context.
 
         Returns:
-            Dict[str, Any]: The raw context dictionary including protocols
+            Dict[str, Any]: The raw context dictionary including protocols and provider data
         """
-        # Build the full context including protocols
+        # Start with static context
         full_context = dict(self.context)
 
-        # Add active protocols to context
+        # 1. Collect from providers
+        for provider in self._providers:
+            if getattr(provider, 'inject_context', True):
+                try:
+                    contribution = provider.get_context_contribution()
+                    if contribution:
+                        full_context.update(contribution)
+                except Exception:
+                    # Fail silently on provider errors during render
+                    pass
+
+        # 2. Handle Protocol Query (Dynamic Protocols)
+        # If any provider requested protocols via 'protocol_query', fetch them
+        if "protocol_query" in full_context and full_context["protocol_query"]:
+            query = full_context["protocol_query"]
+            matching_protocols = self.get_protocols(query)
+            if matching_protocols:
+                # Add to a temporary list or similar
+                # We need to structure how protocols are shown.
+                # Currently 'active_protocols' shows running protocols.
+                # We might want 'suggested_protocols' or merge them?
+                # For now let's append to active_protocols data if compatible,
+                # or create a new key.
+                pass 
+                # Actually Agent logic was:
+                # self.context.add("active_protocols", [p.model_dump() for p in protocols])
+                # So it treats found protocols as active/available.
+                
+                # We need to convert to the display format expected by formatters
+                # The formatter expects a dict or list.
+                # Let's put them in a list under 'relevant_protocols'
+                full_context["relevant_protocols"] = [p.model_dump() for p in matching_protocols]
+
+        # 3. Add active/running protocols (managed by ContextManager)
         if self.protocols:
             protocols_data = {}
             for name, protocol in self.protocols.items():
@@ -347,7 +389,12 @@ class ContextManager:
                     "progress": f"{protocol.current_step_index + 1}/{len(protocol.steps)}",
                     "current_instructions": current_step.instructions if current_step else []
                 }
-            full_context["active_protocols"] = protocols_data
+            # Merge with existing active_protocols if any
+            if "active_protocols" in full_context:
+                if isinstance(full_context["active_protocols"], dict):
+                    full_context["active_protocols"].update(protocols_data)
+            else:
+                full_context["active_protocols"] = protocols_data
 
         return full_context
 

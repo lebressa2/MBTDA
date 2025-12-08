@@ -97,6 +97,9 @@ class Agent:
         # Set agent reference in state machine
         self.state_machine.set_agent_reference(self)
 
+        # Register all context providers
+        self._register_context_providers()
+
         # Setup default transitions
         self._setup_default_transitions()
 
@@ -210,38 +213,21 @@ class Agent:
 
     def _build_system_prompt(self) -> str:
         """
-        Build the system prompt from context and current state.
+        Build the system prompt from context.
         
-        Automatically collects context contributions from all components
-        that implement IContextProvider and have inject_context=True.
+        Delegates the entire logic to the ContextManager, which
+        acts as the 'renderer', collecting state from all registered
+        providers (components).
         """
-        # Add state instruction to context
-        state_instruction = self.state_machine.get_current_instruction()
-        self.context.add("current_state", self.state_machine.current_state)
-        self.context.add("state_instruction", state_instruction)
-
-        # Collect context from all IContextProvider components
-        self._collect_context_contributions()
-
-        # Add relevant protocols
-        protocol_query = self.state_machine.get_protocol_query()
-        if protocol_query:
-            protocols = self.context.get_protocols(protocol_query)
-            if protocols:
-                self.context.add("active_protocols", [p.model_dump() for p in protocols])
-
         return self.context.populate_system_message()
 
-    def _collect_context_contributions(self) -> None:
+    def _register_context_providers(self) -> None:
         """
-        Collect context from all components implementing IContextProvider.
+        Discover and register all components that implement IContextProvider.
         
-        Automatically discovers all agent components that implement IContextProvider
-        and merges their context contributions into the main context.
-        
-        This approach eliminates the need for a hardcoded component list - any
-        component that implements IContextProvider will automatically be discovered
-        and contribute to the context if inject_context=True.
+        This enables the 'React-like' behavior where components are automatically
+        registered as context providers, allowing them to contribute to the
+        system prompt dynamically.
         """
         from .interfaces.base import IContextProvider
         
@@ -261,19 +247,9 @@ class Agent:
                 
                 # Check if component implements IContextProvider
                 if isinstance(component, IContextProvider):
-                    # Check if context injection is enabled
-                    if getattr(component, 'inject_context', True):
-                        try:
-                            contribution = component.get_context_contribution()
-                            if contribution:
-                                # Merge each key from the contribution
-                                for key, value in contribution.items():
-                                    self.context.add(key, value)
-                        except Exception as e:
-                            if self.logger:
-                                self.logger.warning(
-                                    f"Failed to get context from {type(component).__name__}: {e}"
-                                )
+                    self.logger.debug(f"Registering context provider: {type(component).__name__}") if self.logger else None
+                    self.context.register_provider(component)
+                    
             except AttributeError:
                 # Skip attributes that can't be accessed
                 continue
