@@ -1,10 +1,16 @@
 # 🤖 Agent Framework
 
-Um framework robusto e extensível para criação de agentes AI com suporte a **modos Síncrono** e **Reativo**.
+**O 'React' da Engenharia de Contexto.**
 
 ## 📋 Visão Geral
 
-Este framework implementa uma classe `Agent` bem encapsulada que orquestra múltiplos componentes para fornecer comportamento inteligente através de raciocínio LLM e execução de ferramentas.
+Este framework não é apenas mais uma ferramenta para criar agentes; é uma mudança de paradigma na forma como lidamos com LLMs.
+
+Assim como o **React** transformou o desenvolvimento frontend de páginas estáticas para interfaces dinâmicas e reativas baseadas em componentes, este framework visa transformar a **Engenharia de Contexto**.
+
+Na abordagem tradicional, agentes operam com um contexto predominantemente estático (um System Prompt fixo somado a um histórico linear de mensagens). Este framework propõe um contexto **dinâmico e vivo**.
+
+Através de **Estados** e **Componentes** especializados que contribuem em *realtime* para a construção do prompt, o contexto do agente é "renderizado" dinamicamente a cada ciclo. Isso permite que o agente adapte sua persona, recursos disponíveis, memórias relevantes e instruções sistema, momento a momento, dependendo do estado atual da aplicação.
 
 ### Modos de Operação
 
@@ -43,10 +49,10 @@ src/
 | Componente | Interface | Descrição |
 |------------|-----------|-----------|
 | `text_provider` | `ITextClient` | Cliente LLM (langchain-groq, langchain-google, etc.) |
-| `context` | `ContextManager` | Gerencia o prompt do sistema |
-| `memory` | `IMemoryManager` | Memória curta e longa prazo |
+| `context` | `ContextManager` | **Renderizador de Contexto**. Centraliza a montagem do System Prompt. |
+| `memory` | `IMemoryManager` | Injeta memórias e contexto relevante dinamicamente. |
 | `tools` | `IToolManager` | Registro e execução de ferramentas |
-| `state_machine` | `StateMachine` | Controle de fluxo via estados |
+| `state_machine` | `StateMachine` | Gerencia **Estados** que alteram radicalmente o comportamento/instruções. |
 | `watchdog` | `IWatchdog` | Timer e controle de polling |
 | `logger` | `ILogger` | Logging de thinking tokens e tool calls |
 | `life_manager` | `ILifeCycle` | Token counting, rate limits, recursos |

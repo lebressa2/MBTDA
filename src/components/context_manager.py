@@ -10,9 +10,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
-
-from ..interfaces.base import IFormatter
+from ..interfaces.base import IFormatter, IContextProvider
 from ..models.data_models import Protocol
 
 # ==============================================================================
@@ -532,6 +530,9 @@ class MarkdownFormatter(IFormatter):
         return "\n".join(lines)
 
 
+
+
+
 class ContextManager:
     """
     Manages the agent's context for system prompt generation.
@@ -554,25 +555,14 @@ class ContextManager:
         - Values can be ANY type (strings, dicts, lists, objects with __str__)
         - String values support {meta.field} interpolation
 
+    It acts as the "Context Renderer", pulling data from registered providers.
+
     Attributes:
         _template: Base template dictionary (from TemplateRegistry or custom)
         context: Dynamic context entries added via add()
         protocols: Dictionary of registered Protocol objects
         formatter: IFormatter instance for formatting context
-        meta: MetaData instance for dynamic variables
-
-    Example:
-        # Using a template (dictionary-based)
-        context = ContextManager(template="general_assistant")
-        context.meta.agent_name = "MyAgent"
-
-        # Add/override context - works in harmony with template
-        context.add("custom_field", "my value")
-        context.add("identity", {"name": "Override"})  # Overrides template's identity
-
-        # Any parseable value works
-        context.add("timestamp", datetime.now())  # Will be str() when formatted
-        context.add("config", some_pydantic_model)  # Uses __str__ or model_dump
+        _providers: List of registered IContextProvider components
     """
 
     # Class-level default formatter
@@ -609,236 +599,7 @@ class ContextManager:
         self.context: dict[str, Any] = {}
         self.protocols: dict[str, Protocol] = {}
         self.formatter = formatter or self.base_formatter
-        self.meta = meta or MetaData()
-
-        # Set up template (dictionary-based)
-        if template is None:
-            self._template: dict[str, Any] = {}
-        elif isinstance(template, str):
-            # Load from registry
-            loaded = TemplateRegistry.get(template)
-            self._template = loaded if loaded else {}
-        elif isinstance(template, dict):
-            # Direct dictionary template
-            self._template = _deep_copy_dict(template)
-        else:
-            self._template = {}
-
-    # ==========================================================================
-    # FACTORY METHODS
-    # ==========================================================================
-
-    @classmethod
-    def create_minimal(
-        cls,
-        agent_name: str = "Agent",
-        agent_role: str = "AI Assistant"
-    ) -> "ContextManager":
-        """
-        Create a minimal ContextManager with just identity.
-
-        Args:
-            agent_name: Name of the agent
-            agent_role: Role/persona of the agent
-
-        Returns:
-            ContextManager configured with minimal template
-        """
-        meta = MetaData(agent_name=agent_name, agent_role=agent_role)
-        return cls(template="minimal", meta=meta)
-
-    @classmethod
-    def create_general_assistant(
-        cls,
-        agent_name: str = "Assistant",
-        agent_role: str = "AI Assistant",
-        user_name: str | None = None,
-        session_id: str | None = None
-    ) -> "ContextManager":
-        """
-        Create a general-purpose assistant ContextManager.
-
-        Includes detailed explanations of states and protocols
-        suitable for most use cases.
-
-        Args:
-            agent_name: Name of the agent
-            agent_role: Role/persona of the agent
-            user_name: Optional name of the user
-            session_id: Optional session identifier
-
-        Returns:
-            ContextManager configured with general assistant template
-        """
-        meta = MetaData(
-            agent_name=agent_name,
-            agent_role=agent_role,
-            user_name=user_name,
-            session_id=session_id
-        )
-        return cls(template="general_assistant", meta=meta)
-
-    @classmethod
-    def create_task_agent(
-        cls,
-        agent_name: str = "TaskAgent",
-        session_id: str | None = None
-    ) -> "ContextManager":
-        """
-        Create a task-oriented agent ContextManager.
-
-        Optimized for structured task execution with protocols.
-
-        Args:
-            agent_name: Name of the agent
-            session_id: Optional session identifier
-
-        Returns:
-            ContextManager configured with task agent template
-        """
-        meta = MetaData(
-            agent_name=agent_name,
-            agent_role="Task Execution Agent",
-            session_id=session_id
-        )
-        return cls(template="task_agent", meta=meta)
-
-    @classmethod
-    def create_reactive_agent(
-        cls,
-        agent_name: str = "Monitor",
-        session_id: str | None = None
-    ) -> "ContextManager":
-        """
-        Create a reactive/monitoring agent ContextManager.
-
-        Optimized for event-driven operation with inbox and task monitoring.
-
-        Args:
-            agent_name: Name of the agent
-            session_id: Optional session identifier
-
-        Returns:
-            ContextManager configured with reactive agent template
-        """
-        meta = MetaData(
-            agent_name=agent_name,
-            agent_role="Reactive Monitoring Agent",
-            session_id=session_id
-        )
-        return cls(template="reactive_agent", meta=meta)
-
-    @classmethod
-    def create_from_template(
-        cls,
-        template: dict[str, Any],
-        agent_name: str = "Agent",
-        agent_role: str = "AI Assistant",
-        **meta_kwargs: Any
-    ) -> "ContextManager":
-        """
-        Create a ContextManager with a custom template dictionary.
-
-        Args:
-            template: Custom template dictionary
-            agent_name: Name of the agent
-            agent_role: Role/persona of the agent
-            **meta_kwargs: Additional MetaData fields (e.g., user_name, session_id)
-
-        Returns:
-            ContextManager configured with custom template
-
-        Example:
-            context = ContextManager.create_from_template(
-                template={
-                    "identity": {"name": "{meta.agent_name}"},
-                    "custom_section": {"key": "value"}
-                },
-                agent_name="CustomBot",
-                user_name="Alice"
-            )
-        """
-        meta = MetaData(agent_name=agent_name, agent_role=agent_role)
-
-        # Apply additional meta kwargs
-        for key, value in meta_kwargs.items():
-            if hasattr(meta, key):
-                setattr(meta, key, value)
-            else:
-                meta.custom[key] = value
-
-        return cls(template=template, meta=meta)
-
-    # ==========================================================================
-    # TEMPLATE OPERATIONS
-    # ==========================================================================
-
-    def set_template(self, template: str | dict[str, Any]) -> None:
-        """
-        Set or change the base template.
-
-        Args:
-            template: Template name (string) or template dictionary
-        """
-        if isinstance(template, str):
-            loaded = TemplateRegistry.get(template)
-            self._template = loaded if loaded else {}
-        elif isinstance(template, dict):
-            self._template = _deep_copy_dict(template)
-        else:
-            self._template = {}
-
-    def get_template(self) -> dict[str, Any]:
-        """Get a copy of the current template dictionary."""
-        return _deep_copy_dict(self._template)
-
-    # ==========================================================================
-    # DYNAMIC VARIABLE INTERPOLATION
-    # ==========================================================================
-
-    def _interpolate_meta_variables(self, text: str) -> str:
-        """
-        Replace {meta.field} placeholders with actual values from MetaData.
-
-        Args:
-            text: String containing {meta.field} placeholders
-
-        Returns:
-            String with placeholders replaced by actual values
-        """
-        def replace_match(match: re.Match) -> str:
-            field_name = match.group(1)
-            value = self.meta.get_field(field_name)
-            return str(value) if value is not None else match.group(0)
-
-        return self._META_PATTERN.sub(replace_match, text)
-
-    def _interpolate_value(self, value: Any) -> Any:
-        """
-        Recursively interpolate meta variables in values.
-
-        Handles strings, dicts, lists, and any object with __str__.
-        For non-string, non-container types, converts to string for interpolation
-        if needed.
-
-        Args:
-            value: Value to interpolate
-
-        Returns:
-            Interpolated value
-        """
-        if isinstance(value, str):
-            return self._interpolate_meta_variables(value)
-        elif isinstance(value, dict):
-            return {k: self._interpolate_value(v) for k, v in value.items()}
-        elif isinstance(value, list):
-            return [self._interpolate_value(item) for item in value]
-        elif hasattr(value, 'model_dump'):
-            # Pydantic models - dump to dict and interpolate
-            return self._interpolate_value(value.model_dump())
-        else:
-            # Any other type - keep as is (will be str() when formatted)
-            return value
+        self._providers: list[IContextProvider] = []
 
     # ==========================================================================
     # CONTEXT OPERATIONS
@@ -982,24 +743,88 @@ class ContextManager:
         return list(self.protocols.keys())
 
     # ==========================================================================
+    # PROVIDER OPERATIONS
+    # ==========================================================================
+
+    def register_provider(self, provider: IContextProvider) -> None:
+        """
+        Register a context provider.
+
+        Args:
+            provider: Component implementing IContextProvider
+        """
+        if provider not in self._providers:
+            self._providers.append(provider)
+
+    # ==========================================================================
     # FORMATTING OPERATIONS
     # ==========================================================================
 
     def _build_full_context(self) -> dict[str, Any]:
         """
-        Build the complete context by merging template + dynamic context + protocols.
+        Generate the system message from the current context.
+
+        This method acts as the "render" cycle:
+        1. Collects fresh state from all registered providers
+        2. Merges with static context
+        3. Resolves dynamic elements (like protocols)
+        4. Formats into string
+
+        Args:
+            formatter: Optional formatter to use (overrides instance formatter)
 
         Returns:
             Complete merged context dictionary with interpolated values
         """
-        # Start with template as base
-        full_context = _deep_copy_dict(self._template) if self._template else {}
+        full_context = self.get_raw_context()
+        fmt = formatter or self.formatter
+        return fmt.format(full_context)
 
-        # Deep merge dynamic context (overrides template)
-        if self.context:
-            full_context = _deep_merge_dicts(full_context, self.context)
+    def populate_system_message(self, formatter: IFormatter | None = None) -> str:
+        """
+        Get the raw dictionary that forms the system prompt.
+        Collects data from all providers and merges with static context.
 
-        # Add active protocols
+        Returns:
+            Dict[str, Any]: The raw context dictionary including protocols and provider data
+        """
+        # Start with static context
+        full_context = dict(self.context)
+
+        # 1. Collect from providers
+        for provider in self._providers:
+            if getattr(provider, 'inject_context', True):
+                try:
+                    contribution = provider.get_context_contribution()
+                    if contribution:
+                        full_context.update(contribution)
+                except Exception:
+                    # Fail silently on provider errors during render
+                    pass
+
+        # 2. Handle Protocol Query (Dynamic Protocols)
+        # If any provider requested protocols via 'protocol_query', fetch them
+        if "protocol_query" in full_context and full_context["protocol_query"]:
+            query = full_context["protocol_query"]
+            matching_protocols = self.get_protocols(query)
+            if matching_protocols:
+                # Add to a temporary list or similar
+                # We need to structure how protocols are shown.
+                # Currently 'active_protocols' shows running protocols.
+                # We might want 'suggested_protocols' or merge them?
+                # For now let's append to active_protocols data if compatible,
+                # or create a new key.
+                pass 
+                # Actually Agent logic was:
+                # self.context.add("active_protocols", [p.model_dump() for p in protocols])
+                # So it treats found protocols as active/available.
+                
+                # We need to convert to the display format expected by formatters
+                # The formatter expects a dict or list.
+                # Let's put them in a list under 'relevant_protocols'
+                full_context["relevant_protocols"] = [p.model_dump() for p in matching_protocols]
+
+        # 3. Add active/running protocols (managed by ContextManager)
         if self.protocols:
             protocols_data = {}
             for name, protocol in self.protocols.items():
@@ -1010,38 +835,12 @@ class ContextManager:
                     "progress": f"{protocol.current_step_index + 1}/{len(protocol.steps)}",
                     "current_instructions": current_step.instructions if current_step else []
                 }
-            full_context["active_protocols"] = protocols_data
-
-        # Interpolate all meta variables
-        return self._interpolate_value(full_context)
-
-    def populate_system_message(self, formatter: IFormatter | None = None) -> str:
-        """
-        Generate the system message from template + context + protocols.
-
-        This method:
-        1. Starts with the template dictionary as base
-        2. Deep merges dynamic context (context.add() values)
-        3. Adds protocol information
-        4. Interpolates all {meta.field} variables
-        5. Formats using the configured formatter
-
-        Args:
-            formatter: Optional formatter to use (overrides instance formatter)
-
-        Returns:
-            str: Formatted system message
-        """
-        fmt = formatter or self.formatter
-        full_context = self._build_full_context()
-        return fmt.format(full_context) if full_context else ""
-
-    def get_raw_context(self) -> dict[str, Any]:
-        """
-        Get the complete merged context dictionary.
-
-        This is the MERGED result of template + context.add() + protocols,
-        with all {meta.field} variables interpolated.
+            # Merge with existing active_protocols if any
+            if "active_protocols" in full_context:
+                if isinstance(full_context["active_protocols"], dict):
+                    full_context["active_protocols"].update(protocols_data)
+            else:
+                full_context["active_protocols"] = protocols_data
 
         Returns:
             Dict[str, Any]: Complete context dictionary

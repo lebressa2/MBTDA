@@ -9,6 +9,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
+from ..interfaces.base import IContextProvider
 from ..models.data_models import AgentState, Transition
 
 
@@ -55,7 +56,7 @@ class StateConfig:
         return self.instruction
 
 
-class StateMachine:
+class StateMachine(IContextProvider):
     """
     State machine for managing agent operation modes.
 
@@ -438,3 +439,23 @@ class StateMachine:
         self.current_state = initial_state
         self.previous_state = None
         self.state_history.clear()
+
+    def get_context_contribution(self) -> dict[str, Any]:
+        """
+        Get state machine context for injection into the agent's system prompt.
+
+        Returns:
+            dict with 'current_state', 'state_instruction', and 'protocol_query'
+        """
+        config = self.states.get(self.current_state)
+        
+        contribution = {
+            "current_state": self.current_state,
+            "state_instruction": self.get_current_instruction()
+        }
+        
+        # Add protocol query if present in current state config
+        if config and config.protocols:
+            contribution["protocol_query"] = config.protocols
+            
+        return contribution
