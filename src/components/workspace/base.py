@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..interfaces.base import IWorkspaceManager
+from ...interfaces.base import IWorkspaceManager
 
 
 class WorkspaceManager(IWorkspaceManager):
