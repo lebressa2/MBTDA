@@ -237,7 +237,52 @@ class Agent:
 >>>>>>> feature/knowledge-base
         return self.context.populate_system_message()
 
->>>>>>> feature/knowledge-base
+<<<<<<<<< Temporary merge branch 1
+    def _collect_context_contributions(self) -> None:
+        """
+        Collect context from all components implementing IContextProvider.
+        
+        Automatically discovers all agent components that implement IContextProvider
+        and merges their context contributions into the main context.
+        
+        This approach eliminates the need for a hardcoded component list - any
+        component that implements IContextProvider will automatically be discovered
+        and contribute to the context if inject_context=True.
+        """
+        from .interfaces.base import IContextProvider
+        
+        # Automatically discover all components that implement IContextProvider
+        # by iterating through all agent attributes
+        for attr_name in dir(self):
+            # Skip private/magic attributes and methods
+            if attr_name.startswith('_'):
+                continue
+            
+            try:
+                component = getattr(self, attr_name)
+                
+                # Skip None values and non-component attributes
+                if component is None or callable(component):
+                    continue
+                
+                # Check if component implements IContextProvider
+                if isinstance(component, IContextProvider):
+                    # Check if context injection is enabled
+                    if getattr(component, 'inject_context', True):
+                        try:
+                            contribution = component.get_context_contribution()
+                            if contribution:
+                                # Merge each key from the contribution
+                                for key, value in contribution.items():
+                                    self.context.add(key, value)
+                        except Exception as e:
+                            if self.logger:
+                                self.logger.warning(
+                                    f"Failed to get context from {type(component).__name__}: {e}"
+                                )
+            except AttributeError:
+                # Skip attributes that can't be accessed
+                continue
 
     def _build_messages(
         self,
@@ -346,7 +391,7 @@ class Agent:
                             if self.logger:
                                 self.logger.error(f"Tool execution failed: {e}")
 
-                            # Get ID safely for error message too
+                            # Get tool call ID safely for error message too
                             if hasattr(tool_call, 'id'):
                                 err_id = tool_call.id
                             else:
