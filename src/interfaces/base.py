@@ -569,7 +569,7 @@ class ITaskManager(ABC):
 # ==============================================================================
 
 from abc import abstractmethod
-from typing import Any, Literal
+from typing import Any, List
 
 from .base import IContextProvider
 
@@ -1099,4 +1099,69 @@ class IKnowledgeBaseAsync(IContextProvider):
         batch_size: int = 100
     ) -> bool:
         """Async version of reindex."""
+        pass
+
+
+# ==============================================================================
+# EMBEDDING PROVIDER INTERFACE
+# ==============================================================================
+
+class IEmbedderProvider(ABC):
+    """
+    Interface for text embedding providers.
+
+    Provides text-to-vector conversion for semantic search capabilities.
+    Implementations can use different embedding models (SentenceTransformers,
+    OpenAI, Ollama, etc.) or mock implementations for testing.
+
+    This abstraction allows knowledge bases to use different embedding
+    backends without tight coupling to specific providers.
+    """
+
+    @abstractmethod
+    def embed_text(self, text: str) -> List[float]:
+        """
+        Generate embedding vector for a single text.
+
+        Args:
+            text: Text to embed
+
+        Returns:
+            List[float]: Embedding vector
+        """
+        pass
+
+    @abstractmethod
+    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """
+        Generate embeddings for multiple texts efficiently.
+
+        Args:
+            texts: List of texts to embed
+
+        Returns:
+            List[List[float]]: List of embedding vectors
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def dimensions(self) -> int:
+        """
+        Get the dimensionality of embeddings.
+
+        Returns:
+            int: Vector dimension size
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        """
+        Get the name/identifier of the embedding model.
+
+        Returns:
+            str: Model identifier
+        """
         pass

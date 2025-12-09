@@ -93,6 +93,12 @@ class Agent:
         self._event_queue: list[AgentEvent] = []
         self._protocols: dict[str, Protocol] = {}
 
+        # Register components for automatic context contribution
+        # This replaces the hardcoded _collect_context_contributions method
+        self.context.register_component('memory', self.memory)
+        self.context.register_component('tools', self.tools)
+        self.context.register_component('workspace', self.workspace_manager)
+
         # Set agent reference in state machine
         self.state_machine.set_agent_reference(self)
 
@@ -210,17 +216,14 @@ class Agent:
     def _build_system_prompt(self) -> str:
         """
         Build the system prompt from context and current state.
-        
-        Automatically collects context contributions from all components
+
+        Automatically collects context contributions from all registered components
         that implement IContextProvider and have inject_context=True.
         """
         # Add state instruction to context
         state_instruction = self.state_machine.get_current_instruction()
         self.context.add("current_state", self.state_machine.current_state)
         self.context.add("state_instruction", state_instruction)
-
-        # Collect context from all IContextProvider components
-        self._collect_context_contributions()
 
         # Add relevant protocols
         protocol_query = self.state_machine.get_protocol_query()
@@ -231,41 +234,7 @@ class Agent:
 
         return self.context.populate_system_message()
 
-    def _collect_context_contributions(self) -> None:
-        """
-        Collect context from all components implementing IContextProvider.
-        
-        Iterates through all components and merges their context contributions
-        into the main context if they have inject_context=True.
-        """
-        from .interfaces.base import IContextProvider
-        
-        # List of components that might implement IContextProvider
-        components = [
-            self.memory,
-            self.tools,
-            self.workspace_manager,
-        ]
-        
-        for component in components:
-            if component is None:
-                continue
-            
-            # Check if component implements IContextProvider
-            if isinstance(component, IContextProvider):
-                # Check if context injection is enabled
-                if getattr(component, 'inject_context', True):
-                    try:
-                        contribution = component.get_context_contribution()
-                        if contribution:
-                            # Merge each key from the contribution
-                            for key, value in contribution.items():
-                                self.context.add(key, value)
-                    except Exception as e:
-                        if self.logger:
-                            self.logger.warning(
-                                f"Failed to get context from {type(component).__name__}: {e}"
-                            )
+
 
     def _build_messages(
         self,

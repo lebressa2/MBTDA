@@ -115,6 +115,9 @@ skip-magic-trailing-comma = false
 # Onde procurar testes
 testpaths = ["tests"]
 
+# Onde está o código fonte (para projetos src-layout)
+pythonpath = "src"
+
 # Markers (tags) para organizar testes
 markers = [
     "unit: Testes unitários rápidos (sem APIs reais)",
@@ -129,6 +132,7 @@ addopts = [
     "--tb=short",            # Traceback curto
     "-ra",                   # Mostra resumo de todos os resultados
     "--strict-markers",      # Erro se usar marker não definido
+    "--import-mode=prepend", # Prepend src to Python path during import
 ]
 
 # Ignora warnings específicos (menos spam no output)

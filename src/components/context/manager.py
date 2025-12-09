@@ -12,8 +12,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from ...interfaces.base import IFormatter
-from ...models.data_models import Protocol
+from interfaces.base import IFormatter
+from models.data_models import Protocol
+from interfaces.base import IContextProvider
 
 # ==============================================================================
 # METADATA MODEL FOR DYNAMIC VARIABLES
@@ -611,6 +612,9 @@ class ContextManager:
         self.formatter = formatter or self.base_formatter
         self.meta = meta or MetaData()
 
+        # Component registry for automatic context contribution
+        self._registered_components: dict[str, Any] = {}
+
         # Set up template (dictionary-based)
         if template is None:
             self._template: dict[str, Any] = {}
@@ -922,6 +926,84 @@ class ContextManager:
         return list(self.context.keys())
 
     # ==========================================================================
+    # COMPONENT REGISTRY OPERATIONS
+    # ==========================================================================
+
+    def register_component(self, name: str, component: Any) -> None:
+        """
+        Register a component for automatic context contribution.
+
+        If the component implements IContextProvider and has inject_context=True,
+        it will be automatically included in context building during
+        _build_full_context().
+
+        Args:
+            name: Unique name for the component (e.g., 'memory', 'workspace')
+            component: Component instance to register
+
+        Example:
+            context.register_component('memory', memory_manager)
+            context.register_component('workspace', workspace_manager)
+        """
+        self._registered_components[name] = component
+
+    def unregister_component(self, name: str) -> bool:
+        """
+        Remove a registered component.
+
+        Args:
+            name: Component name to remove
+
+        Returns:
+            bool: True if component was found and removed
+        """
+        if name in self._registered_components:
+            del self._registered_components[name]
+            return True
+        return False
+
+    def list_registered_components(self) -> list[str]:
+        """
+        Get list of registered component names.
+
+        Returns:
+            list[str]: Component names
+        """
+        return list(self._registered_components.keys())
+
+    def get_registered_component(self, name: str) -> Any | None:
+        """
+        Get a registered component by name.
+
+        Args:
+            name: Component name
+
+        Returns:
+            Component instance or None if not found
+        """
+        return self._registered_components.get(name)
+
+    def get_context_provider_info(self) -> dict[str, dict]:
+        """
+        Get information about all registered context providers.
+
+        Useful for debugging which components are contributing to context.
+
+        Returns:
+            dict: {component_name: {'is_provider': bool, 'inject_context': bool, 'component_type': str}}
+        """
+        # IContextProvider already imported at module level
+
+        info = {}
+        for name, component in self._registered_components.items():
+            info[name] = {
+                'is_provider': isinstance(component, IContextProvider),
+                'inject_context': getattr(component, 'inject_context', True) if component else False,
+                'component_type': type(component).__name__ if component else 'None'
+            }
+        return info
+
+    # ==========================================================================
     # PROTOCOL OPERATIONS
     # ==========================================================================
 
@@ -987,7 +1069,10 @@ class ContextManager:
 
     def _build_full_context(self) -> dict[str, Any]:
         """
-        Build the complete context by merging template + dynamic context + protocols.
+        Build the complete context by merging template + registered components + protocols.
+
+        Automatically discovers and includes context from all registered
+        components that implement IContextProvider.
 
         Returns:
             Complete merged context dictionary with interpolated values
@@ -995,7 +1080,30 @@ class ContextManager:
         # Start with template as base
         full_context = _deep_copy_dict(self._template) if self._template else {}
 
-        # Deep merge dynamic context (overrides template)
+        # Automatically collect context from registered components
+        for component_name, component in self._registered_components.items():
+            if component is None:
+                continue
+
+            # Check if component implements IContextProvider
+            # IContextProvider already imported at module level
+            if isinstance(component, IContextProvider):
+                # Check if context injection is enabled
+                if getattr(component, 'inject_context', True):
+                    try:
+                        contribution = component.get_context_contribution()
+                        if contribution:
+                            # Merge each key from the contribution
+                            for key, value in contribution.items():
+                                self.add(key, value)
+                    except Exception as e:
+                        # Log error but don't break context building
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            f"Failed to get context from {component_name}: {e}"
+                        )
+
+        # Deep merge dynamic context (this includes contributions from components above)
         if self.context:
             full_context = _deep_merge_dicts(full_context, self.context)
 

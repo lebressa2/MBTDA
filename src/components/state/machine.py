@@ -9,7 +9,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
-from ...models.data_models import AgentState, Transition
+from models.data_models import AgentState, Transition
 
 
 class StateConfig:
