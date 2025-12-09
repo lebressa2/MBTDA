@@ -233,11 +233,6 @@ class Agent:
             if protocols:
                 self.context.add("active_protocols", [p.model_dump() for p in protocols])
 
-
->>>>>>> feature/knowledge-base
-        return self.context.populate_system_message()
-
-<<<<<<<<< Temporary merge branch 1
     def _collect_context_contributions(self) -> None:
         """
         Collect context from all components implementing IContextProvider.
