@@ -9,8 +9,7 @@ import json
 import time
 from typing import Any
 
-from .components.context_manager import ContextManager
-from .components.state_machine import StateMachine
+from .components import ContextManager, StateMachine
 from .interfaces.base import (
     IInboxClient,
     ILifeCycle,
@@ -93,6 +92,12 @@ class Agent:
         self._is_monitoring = False
         self._event_queue: list[AgentEvent] = []
         self._protocols: dict[str, Protocol] = {}
+
+        # Register components for automatic context contribution
+        # This replaces the hardcoded _collect_context_contributions method
+        self.context.register_component('memory', self.memory)
+        self.context.register_component('tools', self.tools)
+        self.context.register_component('workspace', self.workspace_manager)
 
         # Set agent reference in state machine
         self.state_machine.set_agent_reference(self)
@@ -211,17 +216,15 @@ class Agent:
     def _build_system_prompt(self) -> str:
         """
         Build the system prompt from context and current state.
-        
-        Automatically collects context contributions from all components
+
+        Automatically collects context contributions from all registered components
         that implement IContextProvider and have inject_context=True.
         """
         # Add state instruction to context
         state_instruction = self.state_machine.get_current_instruction()
         self.context.add("current_state", self.state_machine.current_state)
-        self.context.add("state_instruction", state_instruction)
 
-        # Collect context from all IContextProvider components
-        self._collect_context_contributions()
+        self.context.add("state_instruction", state_instruction)
 
         # Add relevant protocols
         protocol_query = self.state_machine.get_protocol_query()
@@ -230,53 +233,11 @@ class Agent:
             if protocols:
                 self.context.add("active_protocols", [p.model_dump() for p in protocols])
 
+
+>>>>>>> feature/knowledge-base
         return self.context.populate_system_message()
 
-    def _collect_context_contributions(self) -> None:
-        """
-        Collect context from all components implementing IContextProvider.
-        
-        Automatically discovers all agent components that implement IContextProvider
-        and merges their context contributions into the main context.
-        
-        This approach eliminates the need for a hardcoded component list - any
-        component that implements IContextProvider will automatically be discovered
-        and contribute to the context if inject_context=True.
-        """
-        from .interfaces.base import IContextProvider
-        
-        # Automatically discover all components that implement IContextProvider
-        # by iterating through all agent attributes
-        for attr_name in dir(self):
-            # Skip private/magic attributes and methods
-            if attr_name.startswith('_'):
-                continue
-            
-            try:
-                component = getattr(self, attr_name)
-                
-                # Skip None values and non-component attributes
-                if component is None or callable(component):
-                    continue
-                
-                # Check if component implements IContextProvider
-                if isinstance(component, IContextProvider):
-                    # Check if context injection is enabled
-                    if getattr(component, 'inject_context', True):
-                        try:
-                            contribution = component.get_context_contribution()
-                            if contribution:
-                                # Merge each key from the contribution
-                                for key, value in contribution.items():
-                                    self.context.add(key, value)
-                        except Exception as e:
-                            if self.logger:
-                                self.logger.warning(
-                                    f"Failed to get context from {type(component).__name__}: {e}"
-                                )
-            except AttributeError:
-                # Skip attributes that can't be accessed
-                continue
+>>>>>>> feature/knowledge-base
 
     def _build_messages(
         self,
