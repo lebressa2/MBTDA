@@ -147,6 +147,173 @@ protocol = Protocol(
 agent.add_protocol(protocol)
 ```
 
+### ContextManager - Templates (Dicionários) e Variáveis Dinâmicas
+
+O `ContextManager` utiliza um sistema de **templates baseados em dicionários** que funcionam em **harmonia** com `context.add()`.
+
+#### Conceito Chave: Templates + add() em Harmonia
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Sistema de Contexto                       │
+├─────────────────────────────────────────────────────────────┤
+│  Template (Base)     +    context.add()    =    Output      │
+│  ─────────────────        ─────────────        ─────────    │
+│  Dicionário com           Adiciona ou          Merge        │
+│  estrutura base           sobrescreve          profundo     │
+│                           campos                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Templates Disponíveis (Dicionários)
+
+| Template | Descrição |
+|----------|-----------|
+| `minimal` | Apenas identidade do agente |
+| `general_assistant` | Assistente geral com explicações de estados e protocolos |
+| `task_agent` | Agente focado em tarefas estruturadas |
+| `reactive_agent` | Agente para modo reativo/monitoramento |
+
+#### Uso Básico
+
+```python
+from src.components import ContextManager
+
+# Usar template pré-definido
+context = ContextManager(template="general_assistant")
+context.meta.agent_name = "MeuAgente"
+
+# Adicionar campos - funciona em harmonia com o template
+context.add("custom_field", "Valor customizado")
+context.add("identity", {"extra_info": "Adicionado ao identity do template"})
+```
+
+#### Registrar Templates Customizados
+
+```python
+from src.components import ContextManager, TemplateRegistry
+
+# Registrar um template customizado (DICIONÁRIO)
+TemplateRegistry.register("meu_agente", {
+    "identity": {
+        "name": "{meta.agent_name}",
+        "role": "{meta.agent_role}",
+        "expertise": ["Python", "JavaScript"]
+    },
+    "behavior": {
+        "style": "conciso",
+        "format": "markdown"
+    },
+    "rules": [
+        "Sempre responder em português",
+        "Usar exemplos de código quando apropriado"
+    ]
+})
+
+# Usar o template customizado
+context = ContextManager(template="meu_agente")
+context.meta.agent_name = "CodeBot"
+
+# Listar templates disponíveis
+print(TemplateRegistry.list_templates())
+# ['minimal', 'general_assistant', 'task_agent', 'reactive_agent', 'meu_agente']
+```
+
+#### Factory Methods
+
+```python
+from src.components import ContextManager
+
+# Assistente geral
+context = ContextManager.create_general_assistant(
+    agent_name="MeuAgente",
+    agent_role="Assistente de Código",
+    user_name="Arthur",
+    session_id="session_123"
+)
+
+# Agente de tarefas
+context = ContextManager.create_task_agent(agent_name="TaskBot")
+
+# Agente reativo
+context = ContextManager.create_reactive_agent(agent_name="Monitor")
+
+# Template customizado via dicionário
+context = ContextManager.create_from_template(
+    template={"identity": {"name": "{meta.agent_name}"}},
+    agent_name="CustomBot"
+)
+```
+
+#### context.add() - Valores de QUALQUER Tipo
+
+O `context.add()` aceita **qualquer valor** que possa ser convertido para string:
+
+```python
+from datetime import datetime
+
+context = ContextManager(template="minimal")
+
+# Strings (suportam {meta.campo})
+context.add("greeting", "Olá {meta.user_name}!")
+
+# f-strings funcionam naturalmente!
+context.add("timestamp", f"Gerado em {datetime.now()}")
+
+# Objetos com __str__
+context.add("config", some_object)  # Usa str(some_object)
+
+# Dicionários (merge profundo com template)
+context.add("settings", {"debug": True, "level": 3})
+
+# Listas
+context.add("tags", ["importante", "urgente"])
+
+# Modelos Pydantic (usa model_dump())
+context.add("user_data", pydantic_model)
+```
+
+#### Variáveis Dinâmicas (MetaData)
+
+Campos do `MetaData` são interpolados usando sintaxe `{meta.campo}`:
+
+```python
+context = ContextManager.create_general_assistant(agent_name="Bot")
+
+# Acessar/modificar metadata
+context.meta.user_name = "Arthur"
+context.meta.session_id = "sess_001"
+
+# Campos auto-atualizados
+print(context.meta.current_time)      # Hora atual ISO format
+print(context.meta.current_date)      # Data YYYY-MM-DD
+print(context.meta.current_datetime)  # Data e hora formatados
+
+# Campos customizados
+context.meta.custom["project"] = "MBTDA"
+context.meta.custom["environment"] = "development"
+
+# Usar em contexto dinâmico
+context.add("greeting", "Olá {meta.user_name}!")
+context.add("info", "Projeto: {meta.custom.project}")
+```
+
+#### Campos do MetaData
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `agent_name` | `str` | Nome do agente |
+| `agent_role` | `str` | Papel/persona do agente |
+| `agent_version` | `str` | Versão do agente |
+| `session_id` | `str \| None` | ID da sessão atual |
+| `user_name` | `str \| None` | Nome do usuário |
+| `current_time` | `property` | Hora atual (auto-atualizado) |
+| `current_date` | `property` | Data atual (auto-atualizado) |
+| `current_datetime` | `property` | Data/hora formatados |
+| `custom` | `dict` | Campos customizados extras |
+
+
+
 ## 🚀 Demo
 
 Execute o script de demonstração:
