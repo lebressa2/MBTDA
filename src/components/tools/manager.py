@@ -4,7 +4,7 @@ Tool Manager for the Agent Framework.
 
 from typing import Any
 
-from ...interfaces.base import IToolManager
+from interfaces.base import IToolManager
 
 
 class ToolManager(IToolManager):

@@ -18,6 +18,7 @@ from .state import StateMachine
 from .tools import ToolManager
 from .monitoring import Watchdog
 from .workspace import WorkspaceManager, LocalWorkspaceManager
+from .knowledge import ChromaKnowledgeBase
 
 __all__ = [
     # Context Manager
@@ -45,4 +46,6 @@ __all__ = [
     "InMemoryManager",
     # Tools
     "ToolManager",
+    # Knowledge Base
+    "ChromaKnowledgeBase",
 ]
