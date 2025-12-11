@@ -9,7 +9,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
-from models.data_models import AgentState, Transition
+from ...models.data_models import AgentState, Transition
 
 
 class StateConfig:
@@ -84,6 +84,7 @@ class StateMachine:
         self.previous_state: str | None = None
         self.state_history: list[dict[str, Any]] = []
         self._agent_ref: Any | None = None
+        self._is_monitoring: bool = False
 
         # Register default states
         self._register_default_states()
@@ -438,3 +439,75 @@ class StateMachine:
         self.current_state = initial_state
         self.previous_state = None
         self.state_history.clear()
+        self._is_monitoring = False
+
+    # ==========================================================================
+    # MONITORING CONTROL
+    # ==========================================================================
+
+    def is_monitoring(self) -> bool:
+        """Check if the state machine is in monitoring mode."""
+        return self._is_monitoring
+
+    def start_monitoring(self, agent: Any | None = None) -> bool:
+        """
+        Start monitoring mode.
+
+        Transitions to MONITORING state and sets the monitoring flag.
+
+        Args:
+            agent: Optional agent reference for callbacks
+
+        Returns:
+            bool: True if monitoring started successfully
+        """
+        agent = agent or self._agent_ref
+        self._is_monitoring = True
+        return self.trigger("mode:monitoring", agent)
+
+    def stop_monitoring(self, agent: Any | None = None) -> None:
+        """
+        Stop monitoring mode.
+
+        Clears the monitoring flag and transitions to IDLE.
+
+        Args:
+            agent: Optional agent reference for callbacks
+        """
+        agent = agent or self._agent_ref
+        self._is_monitoring = False
+        self.force_transition(AgentState.IDLE.value, agent)
+
+    # ==========================================================================
+    # STATUS
+    # ==========================================================================
+
+    def get_status(self, life_manager: Any | None = None) -> dict[str, Any]:
+        """
+        Get a summary of the state machine's current status.
+
+        Args:
+            life_manager: Optional lifecycle manager for resource info
+
+        Returns:
+            dict: Status information including state, monitoring, and history
+        """
+        status = {
+            "current_state": self.current_state,
+            "previous_state": self.previous_state,
+            "is_monitoring": self._is_monitoring,
+            "available_transitions": [
+                {"trigger": t.trigger, "target": t.target}
+                for t in self.get_available_transitions()
+            ],
+            "registered_states": list(self.states.keys()),
+            "history_length": len(self.state_history)
+        }
+
+        # Add lifecycle info if provided
+        if life_manager is not None:
+            status["guardrails"] = life_manager.check_guardrails()
+            status["token_usage"] = life_manager.get_token_usage()
+
+        return status
+

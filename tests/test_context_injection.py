@@ -25,11 +25,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.tools import tool
 
 from src.agent import Agent
-from src.components.context_manager import ContextManager
-from src.components.memory import InMemoryManager
-from src.components.tools import ToolManager
-from src.components.workspace import WorkspaceManager
-from src.components.state_machine import StateMachine
+from src.components import ContextManager
+from src.components import InMemoryManager
+from src.components import ToolManager
+from src.components import WorkspaceManager
+from src.components import StateMachine
 from src.interfaces.base import IContextProvider
 from src.models.data_models import AgentState
 
@@ -222,10 +222,7 @@ def test_disabled_context_injection() -> bool:
             workspace_manager=workspace
         )
         
-        # Manually trigger context collection
-        agent._collect_context_contributions()
-        
-        # Get raw context
+        # Get raw context (context collection happens automatically in _build_full_context)
         raw_ctx = context.get_raw_context()
         
         print_test_step(5, "Verifying disabled components don't inject")

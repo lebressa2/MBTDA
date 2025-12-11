@@ -5,7 +5,7 @@ Watchdog Component for the Agent Framework.
 import threading
 import time
 
-from interfaces.base import IWatchdog
+from ...interfaces.base import IWatchdog
 
 
 class Watchdog(IWatchdog):

@@ -28,8 +28,13 @@ class Agent:
     """
     Main Agent class with Synchronous and Reactive operation modes.
 
-    The Agent orchestrates all components to provide intelligent behavior
-    through LLM-powered reasoning and tool execution.
+    The Agent is a thin container that orchestrates all components to provide
+    intelligent behavior through LLM-powered reasoning and tool execution.
+    
+    Responsibilities are delegated to specialized components:
+    - ContextManager: System prompt building, protocol management, context contributions
+    - StateMachine: State transitions, monitoring mode control, status reporting
+    - Memory/Tools/Workspace: Data management and operations
 
     Attributes:
         text_provider: LLM client for text generation
@@ -89,15 +94,10 @@ class Agent:
         self.task_client = task_manager
 
         # Internal state
-        self._is_monitoring = False
         self._event_queue: list[AgentEvent] = []
-        self._protocols: dict[str, Protocol] = {}
 
         # Register components for automatic context contribution
-        # This replaces the hardcoded _collect_context_contributions method
-        self.context.register_component('memory', self.memory)
-        self.context.register_component('tools', self.tools)
-        self.context.register_component('workspace', self.workspace_manager)
+        self.context.discover_components(self)
 
         # Set agent reference in state machine
         self.state_machine.set_agent_reference(self)
@@ -195,7 +195,7 @@ class Agent:
         # 3. Transition to THINKING
         self.state_machine.trigger("process:start", self)
 
-        # 4. Build system prompt
+        # 4. Build system prompt (delegated to ContextManager)
         system_prompt = self._build_system_prompt()
 
         # 5. Build messages for LLM
@@ -215,69 +215,14 @@ class Agent:
 
     def _build_system_prompt(self) -> str:
         """
-        Build the system prompt from context and current state.
-
-        Automatically collects context contributions from all registered components
-        that implement IContextProvider and have inject_context=True.
-        """
-        # Add state instruction to context
-        state_instruction = self.state_machine.get_current_instruction()
-        self.context.add("current_state", self.state_machine.current_state)
-
-        self.context.add("state_instruction", state_instruction)
-
-        # Add relevant protocols
-        protocol_query = self.state_machine.get_protocol_query()
-        if protocol_query:
-            protocols = self.context.get_protocols(protocol_query)
-            if protocols:
-                self.context.add("active_protocols", [p.model_dump() for p in protocols])
-
-    def _collect_context_contributions(self) -> None:
-        """
-        Collect context from all components implementing IContextProvider.
+        Build the system prompt (backward compatible wrapper).
         
-        Automatically discovers all agent components that implement IContextProvider
-        and merges their context contributions into the main context.
+        Delegates to context.build_system_prompt() for actual implementation.
         
-        This approach eliminates the need for a hardcoded component list - any
-        component that implements IContextProvider will automatically be discovered
-        and contribute to the context if inject_context=True.
+        Returns:
+            str: The formatted system prompt
         """
-        from .interfaces.base import IContextProvider
-        
-        # Automatically discover all components that implement IContextProvider
-        # by iterating through all agent attributes
-        for attr_name in dir(self):
-            # Skip private/magic attributes and methods
-            if attr_name.startswith('_'):
-                continue
-            
-            try:
-                component = getattr(self, attr_name)
-                
-                # Skip None values and non-component attributes
-                if component is None or callable(component):
-                    continue
-                
-                # Check if component implements IContextProvider
-                if isinstance(component, IContextProvider):
-                    # Check if context injection is enabled
-                    if getattr(component, 'inject_context', True):
-                        try:
-                            contribution = component.get_context_contribution()
-                            if contribution:
-                                # Merge each key from the contribution
-                                for key, value in contribution.items():
-                                    self.context.add(key, value)
-                        except Exception as e:
-                            if self.logger:
-                                self.logger.warning(
-                                    f"Failed to get context from {type(component).__name__}: {e}"
-                                )
-            except AttributeError:
-                # Skip attributes that can't be accessed
-                continue
+        return self.context.build_system_prompt(self.state_machine)
 
     def _build_messages(
         self,
@@ -430,14 +375,13 @@ class Agent:
         if self.logger:
             self.logger.info(f"Starting monitoring mode for: {sources}")
 
-        # Transition to MONITORING state
-        self.state_machine.trigger("mode:monitoring", self)
-        self._is_monitoring = True
+        # Transition to MONITORING state (delegated to StateMachine)
+        self.state_machine.start_monitoring(self)
 
         poll_interval = self.watchdog.get_poll_interval() if self.watchdog else 30.0
 
         try:
-            while self._is_monitoring:
+            while self.state_machine.is_monitoring():
                 events_detected = []
 
                 # Check inbox
@@ -463,19 +407,18 @@ class Agent:
                     self.process_event(event)
 
                 # Wait for next poll
-                if self._is_monitoring:
+                if self.state_machine.is_monitoring():
                     time.sleep(poll_interval)
 
         except KeyboardInterrupt:
             if self.logger:
                 self.logger.info("Monitoring stopped by user")
         finally:
-            self._is_monitoring = False
-            self.state_machine.force_transition(AgentState.IDLE.value, self)
+            self.state_machine.stop_monitoring(self)
 
     def stop_monitoring(self) -> None:
-        """Stop the monitoring loop."""
-        self._is_monitoring = False
+        """Stop the monitoring loop (delegated to StateMachine)."""
+        self.state_machine.stop_monitoring(self)
         if self.logger:
             self.logger.info("Monitoring stopped")
 
@@ -515,46 +458,38 @@ class Agent:
         response = self.process_message(message)
 
         # Return to monitoring if still active
-        if self._is_monitoring:
+        if self.state_machine.is_monitoring():
             self.state_machine.force_transition(AgentState.MONITORING.value, self)
 
         return response
 
     # ==========================================================================
-    # PROTOCOL MANAGEMENT
+    # PROTOCOL MANAGEMENT (delegated to ContextManager)
     # ==========================================================================
 
     def add_protocol(self, protocol: Protocol) -> None:
-        """Add a protocol to the agent."""
-        self._protocols[protocol.protocol_name] = protocol
+        """Add a protocol to the agent (delegated to ContextManager)."""
         self.context.add_protocol(protocol)
 
     def get_protocol(self, name: str) -> Protocol | None:
-        """Get a protocol by name."""
-        return self._protocols.get(name)
+        """Get a protocol by name (delegated to ContextManager)."""
+        return self.context.get_protocol(name)
 
     # ==========================================================================
-    # UTILITY METHODS
+    # UTILITY METHODS (delegated to StateMachine)
     # ==========================================================================
 
     def get_current_state(self) -> str:
-        """Get the current agent state."""
+        """Get the current agent state (delegated to StateMachine)."""
         return self.state_machine.current_state
 
     def is_monitoring(self) -> bool:
-        """Check if agent is in monitoring mode."""
-        return self._is_monitoring
+        """Check if agent is in monitoring mode (delegated to StateMachine)."""
+        return self.state_machine.is_monitoring()
 
     def get_status(self) -> dict[str, Any]:
-        """Get a summary of the agent's current status."""
-        status = {
-            "state": self.state_machine.current_state,
-            "is_monitoring": self._is_monitoring,
-            "protocols": list(self._protocols.keys())
-        }
-
-        if self.life_manager:
-            status["guardrails"] = self.life_manager.check_guardrails()
-            status["token_usage"] = self.life_manager.get_token_usage()
-
+        """Get a summary of the agent's current status (delegated to StateMachine)."""
+        status = self.state_machine.get_status(self.life_manager)
+        # Add protocol info from context
+        status["protocols"] = list(self.context.protocols.keys())
         return status

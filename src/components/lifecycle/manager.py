@@ -6,7 +6,7 @@ import time
 from collections import deque
 from typing import Any
 
-from interfaces.base import ILifeCycle
+from ...interfaces.base import ILifeCycle
 
 
 class LifeCycleManager(ILifeCycle):

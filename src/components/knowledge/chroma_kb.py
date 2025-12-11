@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 import chromadb
 from chromadb.config import Settings
 
-from interfaces.base import IKnowledgeBase, IEmbedderProvider
+from ...interfaces.base import IKnowledgeBase, IEmbedderProvider
 from clients.embedder import MockEmbedderProvider
 
 

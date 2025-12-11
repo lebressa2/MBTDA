@@ -12,9 +12,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from interfaces.base import IFormatter
-from models.data_models import Protocol
-from interfaces.base import IContextProvider
+from ...interfaces.base import IFormatter
+from ...models.data_models import Protocol
+from ...interfaces.base import IContextProvider
 
 # ==============================================================================
 # METADATA MODEL FOR DYNAMIC VARIABLES
@@ -947,6 +947,36 @@ class ContextManager:
         """
         self._registered_components[name] = component
 
+    def discover_components(self, source: Any) -> None:
+        """
+        Automatically discover and register components from a source object.
+
+        Iterates through attributes of the source object (e.g., Agent)
+        and registers any that implement IContextProvider.
+
+        Args:
+            source: Object to scan for components
+        """
+        for attr_name in dir(source):
+            # Skip private/magic attributes
+            if attr_name.startswith('_'):
+                continue
+
+            try:
+                component = getattr(source, attr_name)
+
+                # Skip None values and non-component attributes
+                if component is None or callable(component):
+                    continue
+
+                # Check if component implements IContextProvider
+                if isinstance(component, IContextProvider):
+                    self.register_component(attr_name, component)
+
+            except AttributeError:
+                # Skip attributes that can't be accessed
+                continue
+
     def unregister_component(self, name: str) -> bool:
         """
         Remove a registered component.
@@ -1164,6 +1194,43 @@ class ContextManager:
             formatter: New formatter to use
         """
         self.formatter = formatter
+
+    def build_system_prompt(self, state_machine: Any = None) -> str:
+        """
+        Build the complete system prompt from context, state, and protocols.
+
+        This is the main method for generating the agent's system prompt.
+        It integrates state machine information, collects contributions from
+        registered components, and formats everything into a single string.
+
+        Args:
+            state_machine: Optional StateMachine instance to get state info from
+
+        Returns:
+            str: The formatted system prompt ready for LLM consumption
+
+        Example:
+            prompt = context.build_system_prompt(agent.state_machine)
+        """
+        # Add state machine information if provided
+        if state_machine is not None:
+            # Add current state
+            self.add("current_state", state_machine.current_state)
+            
+            # Add state instruction
+            state_instruction = state_machine.get_current_instruction()
+            if state_instruction:
+                self.add("state_instruction", state_instruction)
+            
+            # Add relevant protocols based on state query
+            protocol_query = state_machine.get_protocol_query()
+            if protocol_query:
+                protocols = self.get_protocols(protocol_query)
+                if protocols:
+                    self.add("active_protocols", [p.model_dump() for p in protocols])
+
+        # Generate the formatted system message
+        return self.populate_system_message()
 
     # ==========================================================================
     # STATE SNAPSHOT

@@ -15,10 +15,10 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.agent import Agent
-from src.components.context_manager import ContextManager
-from src.components.memory import InMemoryManager
-from src.components.tools import ToolManager
-from src.components.workspace import WorkspaceManager
+from src.components import ContextManager
+from src.components import InMemoryManager
+from src.components import ToolManager
+from src.components import WorkspaceManager
 from src.interfaces.base import IContextProvider
 
 
@@ -141,9 +141,10 @@ def test_automatic_discovery():
     print("    ✓ Added analytics component")
     print("    ✓ Added config component")
     
-    print("\n[7] Triggering automatic context collection...")
-    agent._collect_context_contributions()
-    print("    ✓ Context collection completed")
+    print("\n[7] Re-discovering components (including custom ones)...")
+    # Re-discover all components, including the newly added custom ones
+    context.discover_components(agent)
+    print("    ✓ Component discovery completed")
     
     print("\n[8] Verifying ALL components contributed to context...")
     raw_ctx = context.get_raw_context()

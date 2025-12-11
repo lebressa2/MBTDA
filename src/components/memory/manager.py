@@ -6,7 +6,7 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
-from interfaces.base import IMemoryManager
+from ...interfaces.base import IMemoryManager
 
 
 class InMemoryManager(IMemoryManager):
