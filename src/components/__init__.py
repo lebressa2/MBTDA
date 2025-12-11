@@ -19,6 +19,7 @@ from .tools import ToolManager
 from .monitoring import Watchdog
 from .workspace import WorkspaceManager, LocalWorkspaceManager
 from .knowledge import ChromaKnowledgeBase
+from .raci import SandboxInterpreter, LayeredWorkspace, RACIToolManager
 
 __all__ = [
     # Context Manager
@@ -48,4 +49,9 @@ __all__ = [
     "ToolManager",
     # Knowledge Base
     "ChromaKnowledgeBase",
+    # RACI (Retrieval Augmented Code Interpreter)
+    "SandboxInterpreter",
+    "LayeredWorkspace",
+    "RACIToolManager",
 ]
+
