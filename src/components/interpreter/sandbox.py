@@ -1,84 +1,79 @@
 """
-Sandbox Interpreter Implementation.
+Sandbox Interpreter Component for the Agent Framework.
 
-Executes Python code in an isolated environment with pre-configured modules.
-This is the core of the RACI (Retrieval Augmented Code Interpreter) architecture.
+Provides a Python code interpreter that executes in an isolated environment
+with pre-configured modules (search, http, data, files).
+
+This is a NEW component that requires its own interface (ICodeInterpreter).
+It can be used with any IWorkspaceManager implementation.
 """
 
 import io
 import sys
 import time
 import traceback
+import types
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 from typing import Any
 
-from ...interfaces.raci import (
-    ExecutionResult,
-    ICodeInterpreter,
-    ModuleInfo,
-    WorkspaceLayer,
-)
-from .workspace import LayeredWorkspace
+from ...interfaces.raci import ExecutionResult, ModuleInfo
+from ...interfaces.base import IWorkspaceManager, IContextProvider
 
 
-class SandboxInterpreter(ICodeInterpreter):
+class SandboxInterpreter(IContextProvider):
     """
     Sandbox Python interpreter with pre-configured modules.
     
     Executes Python code in a controlled environment with access to:
     - Built-in modules: search, http, data, files
     - Custom modules: user-defined or agent-created
-    - Workspace layers: read/write to PROJECT and OFFICE
+    - Workspace: read/write via IWorkspaceManager
     
     The interpreter maintains state between executions within a session,
     allowing for iterative development and debugging.
     
-    Security Features:
-    - Timeout enforcement
-    - Path traversal protection
-    - Limited imports (configurable)
-    - Sandboxed file operations
-    
     Example:
+        from src.components.interpreter import SandboxInterpreter
+        from src.components.workspace import WorkspaceManager
+        
+        workspace = WorkspaceManager("/path/to/project")
         interpreter = SandboxInterpreter(workspace)
         
         # Simple execution
         result = interpreter.execute('print("Hello, World!")')
         
-        # Multi-line with modules
+        # With modules
         result = interpreter.execute('''
             from search import web
             results = web("Python tutorials")
-            for r in results[:3]:
-                print(f"- {r['title']}")
-        ''')
-        
-        # Access workspace
-        result = interpreter.execute('''
-            from files import read, write
-            code = read("src/main.py")
-            write("backup.py", code, layer="office")
+            print(results)
         ''')
     """
     
+    # Flag for automatic context injection
+    inject_context: bool = True
+    
     def __init__(
         self,
-        workspace: LayeredWorkspace,
+        workspace: IWorkspaceManager,
         timeout_default: float = 30.0,
-        allowed_imports: list[str] | None = None
+        allowed_imports: list[str] | None = None,
+        inject_context: bool = True
     ):
         """
         Initialize the sandbox interpreter.
         
         Args:
-            workspace: LayeredWorkspace instance for file operations
+            workspace: Any IWorkspaceManager implementation
             timeout_default: Default execution timeout in seconds
             allowed_imports: List of allowed import names (None = all allowed)
+            inject_context: Whether to contribute context to system prompt
         """
         self._workspace = workspace
         self._timeout_default = timeout_default
         self._allowed_imports = allowed_imports
+        self.inject_context = inject_context
         
         # Persistent namespace for the session
         self._namespace: dict[str, Any] = {}
@@ -91,7 +86,7 @@ class SandboxInterpreter(ICodeInterpreter):
     
     def _init_builtin_modules(self) -> None:
         """Initialize the built-in interpreter modules."""
-        # Create the modules namespace
+        # Create the modules namespace (classes that will become modules)
         self._modules_namespace = {
             "search": self._create_search_module(),
             "http": self._create_http_module(),
@@ -106,7 +101,7 @@ class SandboxInterpreter(ICodeInterpreter):
                 description="Web search and knowledge retrieval",
                 functions={
                     "web(query, num_results=5)": "Search the web, returns list of {title, url, snippet}",
-                    "knowledge(query, layer='office')": "Search agent's knowledge base",
+                    "knowledge(query)": "Search agent's knowledge base",
                 },
                 examples=[
                     'from search import web; results = web("Python async")',
@@ -117,7 +112,7 @@ class SandboxInterpreter(ICodeInterpreter):
                 name="http",
                 description="HTTP requests (GET, POST, etc.)",
                 functions={
-                    "get(url, **kwargs)": "GET request, returns response dict with 'status', 'json', 'text'",
+                    "get(url, **kwargs)": "GET request, returns response dict",
                     "post(url, json=None, data=None, **kwargs)": "POST request",
                     "request(method, url, **kwargs)": "Generic HTTP request",
                 },
@@ -142,14 +137,14 @@ class SandboxInterpreter(ICodeInterpreter):
                 name="files",
                 description="Workspace file operations",
                 functions={
-                    "read(path, layer='project')": "Read file from workspace layer",
-                    "write(path, content, layer='project')": "Write file to workspace layer",
-                    "list_dir(path='.', layer='project')": "List directory contents",
-                    "exists(path, layer='project')": "Check if path exists",
+                    "read(path)": "Read file from workspace",
+                    "write(path, content)": "Write file to workspace",
+                    "list_dir(path='.')": "List directory contents",
+                    "exists(path)": "Check if path exists",
                 },
                 examples=[
                     'from files import read, write; content = read("README.md")',
-                    'write("notes.md", "# My Notes", layer="office")',
+                    'write("notes.md", "# My Notes")',
                 ]
             ),
         ]
@@ -173,7 +168,7 @@ class SandboxInterpreter(ICodeInterpreter):
                 Returns:
                     List of results with title, url, snippet
                 """
-                # Placeholder implementation - integrate with DuckDuckGo, Google, etc.
+                # Placeholder - integrate with DuckDuckGo, Tavily, etc.
                 if isinstance(query, str):
                     queries = [query]
                 else:
@@ -181,14 +176,13 @@ class SandboxInterpreter(ICodeInterpreter):
                 
                 results = []
                 for q in queries:
-                    # Simulated results - replace with actual API
                     results.append({
                         "query": q,
                         "results": [
                             {
                                 "title": f"Result for: {q}",
                                 "url": f"https://example.com/search?q={q}",
-                                "snippet": f"This is a placeholder result for '{q}'. Integrate with a real search API."
+                                "snippet": f"Placeholder result for '{q}'. Integrate with a real search API."
                             }
                         ]
                     })
@@ -196,20 +190,17 @@ class SandboxInterpreter(ICodeInterpreter):
                 return results if len(queries) > 1 else results[0]["results"]
             
             @staticmethod
-            def knowledge(query: str, layer: str = "office") -> list[dict[str, Any]]:
-                """Search the agent's knowledge base."""
-                # Placeholder - integrate with vector store
-                ws_layer = WorkspaceLayer.OFFICE if layer == "office" else WorkspaceLayer.PROJECT
-                files = workspace.list_dir(".", ws_layer, recursive=True)
+            def knowledge(query: str) -> list[dict[str, Any]]:
+                """Search the agent's workspace for relevant files."""
+                files = workspace.list_directory(".")
                 
                 # Simple text search (replace with semantic search)
                 results = []
-                for file_path in files[:10]:  # Limit search
-                    content = workspace.read(file_path, ws_layer)
+                for file_path in files[:10]:
+                    content = workspace.read_file(file_path)
                     if content and query.lower() in content.lower():
                         results.append({
                             "path": file_path,
-                            "layer": layer,
                             "snippet": content[:200] + "..." if len(content) > 200 else content
                         })
                 
@@ -256,17 +247,9 @@ class SandboxInterpreter(ICodeInterpreter):
                     return result
                     
                 except ImportError:
-                    return {
-                        "error": "requests library not installed",
-                        "status": -1,
-                        "ok": False
-                    }
+                    return {"error": "requests library not installed", "status": -1, "ok": False}
                 except Exception as e:
-                    return {
-                        "error": str(e),
-                        "status": -1,
-                        "ok": False
-                    }
+                    return {"error": str(e), "status": -1, "ok": False}
         
         return HttpModule
     
@@ -318,51 +301,38 @@ class SandboxInterpreter(ICodeInterpreter):
             """Workspace file operations."""
             
             @staticmethod
-            def _get_layer(layer: str) -> WorkspaceLayer:
-                """Convert string to WorkspaceLayer."""
-                layer_map = {
-                    "project": WorkspaceLayer.PROJECT,
-                    "office": WorkspaceLayer.OFFICE,
-                    "interpreter": WorkspaceLayer.INTERPRETER,
-                }
-                return layer_map.get(layer.lower(), WorkspaceLayer.PROJECT)
-            
-            @staticmethod
-            def read(path: str, layer: str = "project") -> str | None:
+            def read(path: str) -> str | None:
                 """Read a file from the workspace."""
-                return workspace.read(path, FilesModule._get_layer(layer))
+                return workspace.read_file(path)
             
             @staticmethod
-            def write(path: str, content: str, layer: str = "project") -> bool:
+            def write(path: str, content: str) -> bool:
                 """Write a file to the workspace."""
-                return workspace.write(path, content, FilesModule._get_layer(layer))
+                return workspace.create_file(path, content)
             
             @staticmethod
-            def list_dir(path: str = ".", layer: str = "project", recursive: bool = False) -> list[str]:
+            def list_dir(path: str = ".") -> list[str]:
                 """List directory contents."""
-                return workspace.list_dir(path, FilesModule._get_layer(layer), recursive)
+                return workspace.list_directory(path)
             
             @staticmethod
-            def exists(path: str, layer: str = "project") -> bool:
+            def exists(path: str) -> bool:
                 """Check if a path exists."""
-                return workspace.exists(path, FilesModule._get_layer(layer))
+                return workspace.file_exists(path)
             
             @staticmethod
-            def delete(path: str, layer: str = "project") -> bool:
+            def delete(path: str) -> bool:
                 """Delete a file."""
-                return workspace.delete(path, FilesModule._get_layer(layer))
+                return workspace.delete_file(path)
         
         return FilesModule
     
     def _build_execution_namespace(self) -> dict[str, Any]:
         """Build the namespace for code execution."""
-        import types
-        
         # Create proper module objects for import support
         def class_to_module(name: str, cls: type) -> types.ModuleType:
             """Convert a class to a module-like object."""
             module = types.ModuleType(name)
-            # Copy all static methods and class attributes to module
             for attr_name in dir(cls):
                 if not attr_name.startswith('_'):
                     attr = getattr(cls, attr_name)
@@ -376,7 +346,6 @@ class SandboxInterpreter(ICodeInterpreter):
         files_module = class_to_module("files", self._modules_namespace["files"])
         
         # Register modules in sys.modules for import support
-        import sys
         sys.modules["search"] = search_module
         sys.modules["http"] = http_module
         sys.modules["data"] = data_module
@@ -384,7 +353,6 @@ class SandboxInterpreter(ICodeInterpreter):
         
         namespace = {
             "__builtins__": __builtins__,
-            # Inject modules directly as well
             "search": search_module,
             "http": http_module,
             "data": data_module,
@@ -393,9 +361,8 @@ class SandboxInterpreter(ICodeInterpreter):
         
         # Add custom modules
         for name, _ in self._custom_modules.items():
-            module_path = self._workspace.get_layer_root(WorkspaceLayer.OFFICE) / "modules" / f"{name}.py"
+            module_path = Path.home() / ".agent" / "modules" / f"{name}.py"
             if module_path.exists():
-                # Load and execute custom module
                 module_code = module_path.read_text()
                 custom_module = types.ModuleType(name)
                 exec(module_code, custom_module.__dict__)
@@ -413,7 +380,17 @@ class SandboxInterpreter(ICodeInterpreter):
         timeout: float | None = None,
         capture_variables: bool = False
     ) -> ExecutionResult:
-        """Execute Python code in the sandbox."""
+        """
+        Execute Python code in the sandbox.
+        
+        Args:
+            code: Python code to execute
+            timeout: Maximum execution time in seconds
+            capture_variables: Whether to capture variables after execution
+            
+        Returns:
+            ExecutionResult with output, errors, and artifacts
+        """
         if timeout is None:
             timeout = self._timeout_default
         
@@ -424,28 +401,20 @@ class SandboxInterpreter(ICodeInterpreter):
         namespace = self._build_execution_namespace()
         
         try:
-            # Redirect stdout/stderr
             with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                # Execute the code
                 exec(code, namespace)
             
-            # Calculate execution time
             execution_time = time.time() - start_time
-            
-            # Capture output
             output = stdout_capture.getvalue()
             stderr = stderr_capture.getvalue()
             
             if stderr:
                 output += f"\n[stderr]: {stderr}"
             
-            # Update persistent namespace with new variables
+            # Update persistent namespace
             for key, value in namespace.items():
                 if not key.startswith("_") and key not in {"search", "http", "data", "files"}:
                     self._namespace[key] = value
-            
-            # Get artifacts from interpreter directory
-            artifacts = self._workspace.list_dir(".", WorkspaceLayer.INTERPRETER)
             
             # Capture variables if requested
             captured_vars = {}
@@ -453,7 +422,6 @@ class SandboxInterpreter(ICodeInterpreter):
                 for key, value in namespace.items():
                     if not key.startswith("_"):
                         try:
-                            # Only capture serializable values
                             repr(value)
                             captured_vars[key] = value
                         except Exception:
@@ -463,7 +431,7 @@ class SandboxInterpreter(ICodeInterpreter):
                 success=True,
                 output=output,
                 error=None,
-                artifacts=artifacts,
+                artifacts=[],
                 execution_time=execution_time,
                 variables=captured_vars
             )
@@ -490,9 +458,9 @@ class SandboxInterpreter(ICodeInterpreter):
     def get_modules_context(self) -> str:
         """Get a formatted string describing all modules for the system prompt."""
         lines = [
-            "# Available Interpreter Modules",
+            "# Interpreter Modules",
             "",
-            "You can execute Python code using these pre-configured modules:",
+            "Execute Python code using these pre-configured modules:",
             ""
         ]
         
@@ -502,43 +470,32 @@ class SandboxInterpreter(ICodeInterpreter):
         
         lines.extend([
             "## Usage",
-            "",
-            "To use these modules, write Python code in `execute_code` tool:",
             "```python",
             "from search import web",
             "results = web('your query')",
             "print(results)",
             "```",
-            "",
-            "## Workspace Layers",
-            "- 'project': User's project folder (default)",
-            "- 'office': Your private workspace for notes and tools",
-            "- 'interpreter': Temporary execution space",
         ])
         
         return "\n".join(lines)
     
-    def install_module(
-        self, 
-        name: str, 
-        code: str,
-        description: str = ""
-    ) -> bool:
-        """Install a custom module in the interpreter."""
+    def install_module(self, name: str, code: str, description: str = "") -> bool:
+        """Install a custom module."""
         try:
-            # Save module to office layer
-            module_path = f"modules/{name}.py"
-            success = self._workspace.write(module_path, code, WorkspaceLayer.OFFICE)
+            module_dir = Path.home() / ".agent" / "modules"
+            module_dir.mkdir(parents=True, exist_ok=True)
             
-            if success:
-                self._custom_modules[name] = ModuleInfo(
-                    name=name,
-                    description=description or f"Custom module: {name}",
-                    functions={},
-                    examples=[]
-                )
+            module_path = module_dir / f"{name}.py"
+            module_path.write_text(code, encoding="utf-8")
             
-            return success
+            self._custom_modules[name] = ModuleInfo(
+                name=name,
+                description=description or f"Custom module: {name}",
+                functions={},
+                examples=[]
+            )
+            
+            return True
         except Exception:
             return False
     
@@ -547,16 +504,17 @@ class SandboxInterpreter(ICodeInterpreter):
         try:
             if name in self._custom_modules:
                 del self._custom_modules[name]
-                module_path = f"modules/{name}.py"
-                return self._workspace.delete(module_path, WorkspaceLayer.OFFICE)
+                module_path = Path.home() / ".agent" / "modules" / f"{name}.py"
+                if module_path.exists():
+                    module_path.unlink()
+                return True
             return False
         except Exception:
             return False
     
     def reset(self) -> None:
-        """Reset the interpreter state."""
+        """Reset the interpreter state (clear variables)."""
         self._namespace.clear()
-        self._workspace.clear_interpreter()
     
     def get_context_contribution(self) -> dict[str, Any]:
         """Get context contribution for the agent's system prompt."""

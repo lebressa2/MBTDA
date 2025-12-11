@@ -1,5 +1,10 @@
 """
 Tests for RACI (Retrieval Augmented Code Interpreter) components.
+
+Tests the modular architecture where:
+- LayeredWorkspaceManager implements IWorkspaceManager (drop-in replacement)
+- RACIToolManager implements IToolManager (drop-in replacement)
+- SandboxInterpreter is a new component
 """
 
 import tempfile
@@ -13,7 +18,7 @@ class TestWorkspaceLayer:
     
     def test_workspace_layers_exist(self):
         """Test that all workspace layers are defined."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
         assert WorkspaceLayer.PROJECT.value == "project"
         assert WorkspaceLayer.OFFICE.value == "office"
@@ -68,28 +73,28 @@ class TestExecutionResult:
         assert "file.txt" in d["artifacts"]
 
 
-class TestLayeredWorkspace:
-    """Tests for LayeredWorkspace implementation."""
+class TestLayeredWorkspaceManager:
+    """Tests for LayeredWorkspaceManager implementation."""
     
     @pytest.fixture
     def workspace(self, tmp_path):
         """Create a temporary workspace for testing."""
-        from src.components.raci import LayeredWorkspace
+        from src.components.workspace import LayeredWorkspaceManager
         
         project_dir = tmp_path / "project"
         project_dir.mkdir()
         
         office_dir = tmp_path / "office"
         
-        return LayeredWorkspace(
-            project_root=project_dir,
+        return LayeredWorkspaceManager(
+            base_path=str(project_dir),
             agent_id="test_agent",
             office_base=office_dir
         )
     
     def test_layer_roots(self, workspace):
         """Test that layer roots are correctly set."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
         assert workspace.get_layer_root(WorkspaceLayer.PROJECT).exists()
         assert workspace.get_layer_root(WorkspaceLayer.OFFICE).exists()
@@ -97,73 +102,72 @@ class TestLayeredWorkspace:
     
     def test_write_and_read_project(self, workspace):
         """Test writing and reading from project layer."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
-        # Write
-        success = workspace.write("test.txt", "Hello, Project!", WorkspaceLayer.PROJECT)
+        # Write (using IWorkspaceManager interface)
+        success = workspace.create_file("test.txt", "Hello, Project!", WorkspaceLayer.PROJECT)
         assert success is True
         
         # Read
-        content = workspace.read("test.txt", WorkspaceLayer.PROJECT)
+        content = workspace.read_file("test.txt", WorkspaceLayer.PROJECT)
         assert content == "Hello, Project!"
     
     def test_write_and_read_office(self, workspace):
         """Test writing and reading from office layer."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
-        success = workspace.write("notes.md", "# Notes", WorkspaceLayer.OFFICE)
+        success = workspace.create_file("notes.md", "# Notes", WorkspaceLayer.OFFICE)
         assert success is True
         
-        content = workspace.read("notes.md", WorkspaceLayer.OFFICE)
+        content = workspace.read_file("notes.md", WorkspaceLayer.OFFICE)
         assert content == "# Notes"
     
     def test_write_and_read_interpreter(self, workspace):
         """Test writing and reading from interpreter layer."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
-        success = workspace.write("temp.txt", "Temporary", WorkspaceLayer.INTERPRETER)
+        success = workspace.create_file("temp.txt", "Temporary", WorkspaceLayer.INTERPRETER)
         assert success is True
         
-        content = workspace.read("temp.txt", WorkspaceLayer.INTERPRETER)
+        content = workspace.read_file("temp.txt", WorkspaceLayer.INTERPRETER)
         assert content == "Temporary"
     
     def test_list_dir(self, workspace):
         """Test directory listing."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
-        workspace.write("file1.txt", "1", WorkspaceLayer.PROJECT)
-        workspace.write("file2.txt", "2", WorkspaceLayer.PROJECT)
-        workspace.write("subdir/file3.txt", "3", WorkspaceLayer.PROJECT)
+        workspace.create_file("file1.txt", "1", WorkspaceLayer.PROJECT)
+        workspace.create_file("file2.txt", "2", WorkspaceLayer.PROJECT)
         
-        files = workspace.list_dir(".", WorkspaceLayer.PROJECT)
+        files = workspace.list_directory(".", WorkspaceLayer.PROJECT)
         assert len(files) >= 2
     
     def test_exists(self, workspace):
         """Test file existence check."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
-        workspace.write("exists.txt", "I exist", WorkspaceLayer.PROJECT)
+        workspace.create_file("exists.txt", "I exist", WorkspaceLayer.PROJECT)
         
-        assert workspace.exists("exists.txt", WorkspaceLayer.PROJECT) is True
-        assert workspace.exists("not_exists.txt", WorkspaceLayer.PROJECT) is False
+        assert workspace.file_exists("exists.txt", WorkspaceLayer.PROJECT) is True
+        assert workspace.file_exists("not_exists.txt", WorkspaceLayer.PROJECT) is False
     
     def test_delete(self, workspace):
         """Test file deletion."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
-        workspace.write("to_delete.txt", "Delete me", WorkspaceLayer.PROJECT)
-        assert workspace.exists("to_delete.txt", WorkspaceLayer.PROJECT) is True
+        workspace.create_file("to_delete.txt", "Delete me", WorkspaceLayer.PROJECT)
+        assert workspace.file_exists("to_delete.txt", WorkspaceLayer.PROJECT) is True
         
-        success = workspace.delete("to_delete.txt", WorkspaceLayer.PROJECT)
+        success = workspace.delete_file("to_delete.txt", WorkspaceLayer.PROJECT)
         assert success is True
-        assert workspace.exists("to_delete.txt", WorkspaceLayer.PROJECT) is False
+        assert workspace.file_exists("to_delete.txt", WorkspaceLayer.PROJECT) is False
     
     def test_copy_between_layers(self, workspace):
         """Test copying files between layers."""
-        from src.interfaces.raci import WorkspaceLayer
+        from src.components.workspace import WorkspaceLayer
         
         # Write to interpreter
-        workspace.write("output.txt", "Result data", WorkspaceLayer.INTERPRETER)
+        workspace.create_file("output.txt", "Result data", WorkspaceLayer.INTERPRETER)
         
         # Copy to project
         success = workspace.copy_between_layers(
@@ -173,16 +177,26 @@ class TestLayeredWorkspace:
         assert success is True
         
         # Verify copy
-        content = workspace.read("data/output.txt", WorkspaceLayer.PROJECT)
+        content = workspace.read_file("data/output.txt", WorkspaceLayer.PROJECT)
         assert content == "Result data"
     
     def test_path_security(self, workspace):
         """Test that path traversal is prevented."""
-        from src.interfaces.raci import WorkspaceLayer
-        
-        # Attempt path traversal - should return None (safe behavior)
-        result = workspace.read("../../../etc/passwd", WorkspaceLayer.PROJECT)
+        # Path traversal should raise or return None
+        result = workspace.read_file("../../../etc/passwd")
         assert result is None
+    
+    def test_iworkspace_interface_compatibility(self, workspace):
+        """Test that LayeredWorkspaceManager works as IWorkspaceManager."""
+        # Default layer is PROJECT - should work like regular WorkspaceManager
+        success = workspace.create_file("test.txt", "content")
+        assert success is True
+        
+        content = workspace.read_file("test.txt")
+        assert content == "content"
+        
+        files = workspace.list_directory(".")
+        assert "test.txt" in files
 
 
 class TestSandboxInterpreter:
@@ -191,13 +205,10 @@ class TestSandboxInterpreter:
     @pytest.fixture
     def interpreter(self, tmp_path):
         """Create a temporary interpreter for testing."""
-        from src.components.raci import LayeredWorkspace, SandboxInterpreter
+        from src.components.workspace import WorkspaceManager
+        from src.components.interpreter import SandboxInterpreter
         
-        workspace = LayeredWorkspace(
-            project_root=tmp_path / "project",
-            agent_id="test",
-            office_base=tmp_path / "office"
-        )
+        workspace = WorkspaceManager(str(tmp_path / "project"))
         (tmp_path / "project").mkdir(exist_ok=True)
         
         return SandboxInterpreter(workspace)
@@ -253,8 +264,8 @@ print(obj["key"])
         """Test that files module is available."""
         result = interpreter.execute('''
 from files import write, read
-write("test_file.txt", "Hello from interpreter", layer="interpreter")
-content = read("test_file.txt", layer="interpreter")
+write("test_file.txt", "Hello from interpreter")
+content = read("test_file.txt")
 print(content)
 ''')
         
@@ -310,13 +321,11 @@ class TestRACIToolManager:
     @pytest.fixture
     def tool_manager(self, tmp_path):
         """Create a temporary tool manager for testing."""
-        from src.components.raci import LayeredWorkspace, SandboxInterpreter, RACIToolManager
+        from src.components.workspace import WorkspaceManager
+        from src.components.interpreter import SandboxInterpreter
+        from src.components.tools import RACIToolManager
         
-        workspace = LayeredWorkspace(
-            project_root=tmp_path / "project",
-            agent_id="test",
-            office_base=tmp_path / "office"
-        )
+        workspace = WorkspaceManager(str(tmp_path / "project"))
         (tmp_path / "project").mkdir(exist_ok=True)
         
         interpreter = SandboxInterpreter(workspace)
@@ -330,7 +339,7 @@ class TestRACIToolManager:
         assert len(tools) == 3
         
         # Check tool names
-        tool_names = [t["function"]["name"] for t in tools]
+        tool_names = [getattr(t, 'name', str(t)) for t in tools]
         assert "execute_code" in tool_names
         assert "read_file" in tool_names
         assert "write_file" in tool_names
@@ -370,16 +379,35 @@ class TestRACIToolManager:
         """Test context contribution for system prompt."""
         context = tool_manager.get_context_contribution()
         
-        assert "raci" in context
-        assert context["raci"]["mode"] == "code_interpreter"
-        assert "execute_code" in context["raci"]["tools"]
+        assert "available_tools" in context
+        assert "tool_mode" in context
+        assert context["tool_mode"] == "raci_interpreter"
     
     def test_unknown_tool(self, tool_manager):
         """Test handling of unknown tool."""
-        result = tool_manager.execute_tool("unknown_tool")
+        with pytest.raises(ValueError, match="not found"):
+            tool_manager.execute_tool("unknown_tool")
+    
+    def test_itool_manager_interface_compatibility(self, tool_manager):
+        """Test that RACIToolManager works as IToolManager."""
+        # get_tools should work
+        tools = tool_manager.get_tools()
+        assert len(tools) > 0
         
-        assert "error" in result
-        assert "Unknown tool" in result["error"]
+        # get_tool_descriptions should work
+        descriptions = tool_manager.get_tool_descriptions()
+        assert "execute_code" in descriptions
+        
+        # Can register additional tools
+        class CustomTool:
+            name = "custom_tool"
+            description = "A custom tool"
+            def invoke(self, args):
+                return {"result": "custom"}
+        
+        tool_manager.register_tool("custom", CustomTool())
+        tools = tool_manager.get_tools()
+        assert len(tools) == 4  # 3 RACI + 1 custom
 
 
 class TestIntegration:
@@ -387,18 +415,16 @@ class TestIntegration:
     
     def test_full_workflow(self, tmp_path):
         """Test a complete RACI workflow."""
-        from src.components.raci import LayeredWorkspace, SandboxInterpreter, RACIToolManager
+        from src.components.workspace import WorkspaceManager
+        from src.components.interpreter import SandboxInterpreter
+        from src.components.tools import RACIToolManager
         
         # Setup
         project_root = tmp_path / "project"
         project_root.mkdir()
         (project_root / "data.json").write_text('{"items": [1, 2, 3]}')
         
-        workspace = LayeredWorkspace(
-            project_root=project_root,
-            agent_id="test",
-            office_base=tmp_path / "office"
-        )
+        workspace = WorkspaceManager(str(project_root))
         interpreter = SandboxInterpreter(workspace)
         tools = RACIToolManager(interpreter, workspace)
         
@@ -427,6 +453,41 @@ print("Processing complete!")
         processed = (project_root / "processed.json").read_text()
         assert "processed" in processed
         assert "4" in processed
+    
+    def test_drop_in_replacement_workspace(self, tmp_path):
+        """Test LayeredWorkspaceManager as drop-in for WorkspaceManager."""
+        from src.components.workspace import WorkspaceManager, LayeredWorkspaceManager
+        
+        # Both should work the same for basic operations
+        simple = WorkspaceManager(str(tmp_path / "simple"))
+        layered = LayeredWorkspaceManager(str(tmp_path / "layered"))
+        
+        # Same interface
+        simple.create_file("test.txt", "hello")
+        layered.create_file("test.txt", "hello")
+        
+        assert simple.read_file("test.txt") == layered.read_file("test.txt")
+    
+    def test_drop_in_replacement_tools(self, tmp_path):
+        """Test RACIToolManager as drop-in for ToolManager."""
+        from src.components.tools import ToolManager, RACIToolManager
+        from src.components.workspace import WorkspaceManager
+        from src.components.interpreter import SandboxInterpreter
+        
+        # Both implement IToolManager
+        traditional = ToolManager()
+        
+        workspace = WorkspaceManager(str(tmp_path))
+        interpreter = SandboxInterpreter(workspace)
+        raci = RACIToolManager(interpreter, workspace)
+        
+        # Both have get_tools
+        assert hasattr(traditional, 'get_tools')
+        assert hasattr(raci, 'get_tools')
+        
+        # Both have get_tool_descriptions
+        assert hasattr(traditional, 'get_tool_descriptions')
+        assert hasattr(raci, 'get_tool_descriptions')
 
 
 if __name__ == "__main__":
