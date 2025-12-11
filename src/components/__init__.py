@@ -18,7 +18,10 @@ from .state import StateMachine
 from .tools import ToolManager, RACIToolManager
 from .monitoring import Watchdog
 from .workspace import WorkspaceManager, LocalWorkspaceManager, LayeredWorkspaceManager, WorkspaceLayer
-from .knowledge import ChromaKnowledgeBase
+try:
+    from .knowledge import ChromaKnowledgeBase
+except ImportError:
+    ChromaKnowledgeBase = None
 from .interpreter import SandboxInterpreter
 
 __all__ = [

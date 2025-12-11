@@ -20,7 +20,7 @@ import chromadb
 from chromadb.config import Settings
 
 from ...interfaces.base import IKnowledgeBase, IEmbedderProvider
-from clients.embedder import MockEmbedderProvider
+from ...clients.embedder.mock_embedder import MockEmbedderProvider
 
 
 class CustomEmbeddingFunction:

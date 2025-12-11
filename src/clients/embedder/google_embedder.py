@@ -20,7 +20,7 @@ try:
 except ImportError:
     GOOGLE_AVAILABLE = False
 
-from interfaces.base import IEmbedderProvider
+from ...interfaces.base import IEmbedderProvider
 
 
 class GoogleEmbedderProvider(IEmbedderProvider):

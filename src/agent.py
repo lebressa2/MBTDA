@@ -4,8 +4,6 @@ Main Agent Class for the Agent Framework.
 Supports both Synchronous (Request/Response) and Reactive (Monitoring/Event-Driven) modes.
 """
 
-import contextlib
-import json
 import time
 from typing import Any
 
@@ -21,7 +19,7 @@ from .interfaces.base import (
     IWatchdog,
     IWorkspaceManager,
 )
-from .models.data_models import AgentEvent, AgentState, Protocol, Transition
+from .models.data_models import AgentEvent, Protocol
 
 
 class Agent:
@@ -102,260 +100,79 @@ class Agent:
         # Set agent reference in state machine
         self.state_machine.set_agent_reference(self)
 
-        # Setup default transitions
-        self._setup_default_transitions()
-
-    def _setup_default_transitions(self) -> None:
-        """Configure default state machine transitions."""
-        # User input triggers thinking
-        self.state_machine.add_transition(Transition(
-            source=AgentState.IDLE.value,
-            target=AgentState.REQUEST_RECEIVED.value,
-            trigger="input:user_message"
-        ))
-
-        self.state_machine.add_transition(Transition(
-            source=AgentState.REQUEST_RECEIVED.value,
-            target=AgentState.THINKING.value,
-            trigger="process:start"
-        ))
-
-        # Thinking to working
-        self.state_machine.add_transition(Transition(
-            source=AgentState.THINKING.value,
-            target=AgentState.WORKING.value,
-            trigger="action:execute"
-        ))
-
-        # Working back to thinking
-        self.state_machine.add_transition(Transition(
-            source=AgentState.WORKING.value,
-            target=AgentState.THINKING.value,
-            trigger="action:complete"
-        ))
-
-        # Complete to idle
-        self.state_machine.add_transition(Transition(
-            source=AgentState.THINKING.value,
-            target=AgentState.IDLE.value,
-            trigger="process:complete"
-        ))
-
-        # Monitoring mode
-        self.state_machine.add_transition(Transition(
-            source=AgentState.IDLE.value,
-            target=AgentState.MONITORING.value,
-            trigger="mode:monitoring"
-        ))
-
-        self.state_machine.add_transition(Transition(
-            source=AgentState.MONITORING.value,
-            target=AgentState.THINKING.value,
-            trigger="event:inbox_activity"
-        ))
-
-        # Timeout handling
-        self.state_machine.add_transition(Transition(
-            source=AgentState.THINKING.value,
-            target=AgentState.INTERRUPTED.value,
-            trigger="watchdog:timeout"
-        ))
-
     # ==========================================================================
-    # SYNCHRONOUS MODE - Request/Response
+    # MESSAGE HANDLING (Thin interface - delegates to StateMachine)
     # ==========================================================================
 
-    def process_message(
-        self,
-        input_message: str,
-        chat_history: list[Any] | None = None
-    ) -> Any:
+    def process_message(self, input_message: str, **kwargs) -> Any:
         """
-        SYNCHRONOUS MODE (Request/Response).
-
-        Executes a single iteration or complete ReAct loop to generate a response.
+        Process an incoming message.
+        
+        This initiates the agent's processing loop by triggering the 'message' event.
+        The StateMachine controls the flow (e.g., THINKING -> WORKING -> THINKING).
 
         Args:
-            input_message: User's input message
-            chat_history: Optional previous conversation history
+            input_message: The message to process
+            **kwargs: Additional context
 
         Returns:
-            BaseMessage: The agent's response
+            The final response from the agent
         """
         if self.logger:
             self.logger.info(f"Processing message: {input_message[:50]}...")
 
-        # 1. Transition to REQUEST_RECEIVED
-        self.state_machine.trigger("input:user_message", self)
-
-        # 2. Store message in memory
+        # Store message in memory
         if self.memory:
             self.memory.add_message("user", input_message)
 
-        # 3. Transition to THINKING
-        self.state_machine.trigger("process:start", self)
-
-        # 4. Build system prompt (delegated to ContextManager)
-        system_prompt = self._build_system_prompt()
-
-        # 5. Build messages for LLM
-        messages = self._build_messages(system_prompt, input_message, chat_history)
-
-        # 6. Execute ReAct loop
-        response = self._execute_react_loop(messages)
-
-        # 7. Store response in memory
+        # Trigger the message event
+        # This should transition IDLE -> THINKING (if configured)
+        self.state_machine.trigger("message", self)
+        
+        # In a synchronous implementation using callbacks (like ReActAgent),
+        # the trigger chain (THINKING -> WORKING -> THINKING...) will run recursively
+        # until it hits a state that stops (IDLE).
+        # So when trigger returns, the work is done.
+        
+        # We return the last message from memory as the response
         if self.memory:
-            self.memory.add_message("assistant", str(response))
+            messages = self.memory.get_recent_messages()
+            if messages:
+                last_msg = messages[-1]
+                if isinstance(last_msg, dict):
+                    return last_msg.get("content")
+                return last_msg.content
+        
+        return "No response generated."
 
-        # 8. Complete processing
-        self.state_machine.trigger("process:complete", self)
-
-        return response
-
-    def _build_system_prompt(self) -> str:
+    def invoke_llm(self, messages: list[dict], **kwargs) -> Any:
         """
-        Build the system prompt (backward compatible wrapper).
-        
-        Delegates to context.build_system_prompt() for actual implementation.
-        
+        Invoke the LLM directly (utility for state machine callbacks).
+
+        Args:
+            messages: Messages to send to LLM
+            **kwargs: Additional parameters
+
+        Returns:
+            LLM response
+        """
+        # Bind tools if available
+        llm = self.text_provider
+        if self.tools:
+            tools = self.tools.get_tools()
+            if tools:
+                llm = llm.bind_tools(tools)
+
+        return llm.invoke(messages, **kwargs)
+
+    def build_system_prompt(self) -> str:
+        """
+        Build the system prompt.
+
         Returns:
             str: The formatted system prompt
         """
         return self.context.build_system_prompt(self.state_machine)
-
-    def _build_messages(
-        self,
-        system_prompt: str,
-        user_message: str,
-        chat_history: list[Any] | None = None
-    ) -> list[dict[str, str]]:
-        """Build message list for LLM invocation."""
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # Add chat history if provided
-        if chat_history:
-            for msg in chat_history:
-                if hasattr(msg, 'type') and hasattr(msg, 'content'):
-                    messages.append({"role": msg.type, "content": msg.content})
-                elif isinstance(msg, dict):
-                    messages.append(msg)
-
-        # Add current user message
-        messages.append({"role": "user", "content": user_message})
-
-        return messages
-
-    def _execute_react_loop(self, messages: list[dict], max_iterations: int = 10) -> Any:
-        """Execute the ReAct reasoning loop."""
-        iteration = 0
-
-        while iteration < max_iterations:
-            iteration += 1
-
-            # Check rate limits
-            if self.life_manager and not self.life_manager.check_rate_limit():
-                if self.logger:
-                    self.logger.warning("Rate limit reached, waiting...")
-                time.sleep(1)
-
-            # Check watchdog timeout
-            if self.watchdog and self.watchdog.is_timed_out():
-                self.state_machine.trigger("watchdog:timeout", self)
-                raise TimeoutError("Agent operation timed out")
-
-            # Invoke LLM
-            try:
-                # Bind tools if available
-                llm = self.text_provider
-                if self.tools:
-                    tools = self.tools.get_tools()
-                    if tools:
-                        llm = llm.bind_tools(tools)
-
-                response = llm.invoke(messages)
-
-                # Record token usage
-                if self.life_manager:
-                    token_estimate = len(str(response)) // 4
-                    self.life_manager.record_request(token_estimate)
-
-                # Log thinking
-                if self.logger and hasattr(response, 'content'):
-                    self.logger.log_thinking(str(response.content)[:200])
-
-                # Check for tool calls
-                if hasattr(response, 'tool_calls') and response.tool_calls:
-                    self.state_machine.trigger("action:execute", self)
-
-                    # Append assistant message with tool calls
-                    assistant_msg = {
-                        "role": "assistant",
-                        "content": str(response.content) if response.content else None,
-                        "tool_calls": response.tool_calls
-                    }
-                    messages.append(assistant_msg)
-
-                    for tool_call in response.tool_calls:
-                        # Handle object (Pydantic/SDK) or dict
-                        if hasattr(tool_call, 'function'):
-                            tool_name = tool_call.function.name
-                            tool_args = tool_call.function.arguments
-                            # Parse JSON arguments if string
-                            if isinstance(tool_args, str):
-                                with contextlib.suppress(Exception):
-                                    tool_args = json.loads(tool_args)
-                        else:
-                            # Handle dict
-                            tool_name = tool_call.get('name', tool_call.get('function', {}).get('name'))
-                            tool_args = tool_call.get('args', tool_call.get('function', {}).get('arguments', {}))
-
-                        try:
-                            result = self.tools.execute_tool(tool_name, **tool_args)
-                            if self.logger:
-                                self.logger.log_tool_call(tool_name, tool_args, result)
-
-                            # Get tool call ID safely
-                            if hasattr(tool_call, 'id'):
-                                tool_call_id = tool_call.id
-                            else:
-                                tool_call_id = tool_call.get('id')
-
-                            messages.append({
-                                "role": "tool",
-                                "content": str(result),
-                                "name": tool_name,
-                                "tool_call_id": tool_call_id
-                            })
-                        except Exception as e:
-                            if self.logger:
-                                self.logger.error(f"Tool execution failed: {e}")
-
-                            # Get tool call ID safely for error message too
-                            if hasattr(tool_call, 'id'):
-                                err_id = tool_call.id
-                            else:
-                                err_id = tool_call.get('id')
-
-                            messages.append({
-                                "role": "tool",
-                                "content": f"Error: {e}",
-                                "name": tool_name,
-                                "tool_call_id": err_id
-                            })
-
-                    self.state_machine.trigger("action:complete", self)
-                    continue  # Continue loop for more reasoning
-
-                # No tool calls - return final response
-                return response
-
-            except Exception as e:
-                if self.life_manager and self.life_manager.handle_api_error(e):
-                    continue  # Retry
-                raise
-
-        raise RuntimeError(f"ReAct loop exceeded maximum iterations ({max_iterations})")
 
     # ==========================================================================
     # REACTIVE MODE - Monitoring/Event-Driven
@@ -424,9 +241,9 @@ class Agent:
 
     def process_event(self, event: AgentEvent) -> Any:
         """
-        Process a detected event in reactive mode.
-
-        Triggers the ReAct reasoning cycle for the received event.
+        Process a detected event.
+        
+        Delegates to the state machine to handle the event.
 
         Args:
             event: The event to process
@@ -437,16 +254,21 @@ class Agent:
         if self.logger:
             self.logger.info(f"Processing event: {event.event_type} from {event.source}")
 
-        # Trigger transition based on event type
-        if event.event_type == "inbox":
-            self.state_machine.trigger("event:inbox_activity", self)
-        else:
-            self.state_machine.force_transition(AgentState.THINKING.value, self)
-
         # Update context with event data
         self.context.add("current_event", event.model_dump())
 
-        # Build event-specific message
+        # Trigger event in state machine
+        # The StateMachine configuration determines what happens next
+        # (e.g., transition to THINKING, or handle immediately)
+        trigger_name = f"event:{event.event_type}"
+        transitioned = self.state_machine.trigger(trigger_name, self)
+        
+        if not transitioned:
+             # Fallback if no specific transition is defined
+             # We treat it as a message to be processed if possible, or just log it
+             pass
+
+        # Build event-specific message for the LLM/Processing loop
         if event.event_type == "inbox":
             message = f"New email received. Subject: {event.data.get('subject')}. From: {event.data.get('sender')}. Preview: {event.data.get('body_snippet')}"
         elif event.event_type == "task":
@@ -454,14 +276,15 @@ class Agent:
         else:
             message = f"Event received: {event.event_type} - {event.data}"
 
-        # Process through the regular message pipeline
-        response = self.process_message(message)
-
-        # Return to monitoring if still active
-        if self.state_machine.is_monitoring():
-            self.state_machine.force_transition(AgentState.MONITORING.value, self)
-
-        return response
+        # If the state machine transitioned to a state that handles processing (like THINKING),
+        # we might want to invoke the processing loop.
+        # For a generic Agent, we can just return the message or delegate.
+        # Here we assume if we transitioned, we might want to 'handle_message' or similar.
+        
+        # For now, we'll just return the message as a signal.
+        # The ReAct specific logic of "force_transition(THINKING)" is removed.
+        
+        return message
 
     # ==========================================================================
     # PROTOCOL MANAGEMENT (delegated to ContextManager)

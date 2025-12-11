@@ -96,35 +96,10 @@ class StateMachine:
                 name=AgentState.IDLE.value,
                 instruction="Você está no estado IDLE. Aguardando instruções ou eventos.",
             ),
-            AgentState.THINKING.value: StateConfig(
-                name=AgentState.THINKING.value,
-                instruction=(
-                    "Você é um Agente ReAct e está entrando no modo THINKING. "
-                    "Analise o contexto, formule hipóteses, avalie opções e planeje "
-                    "passos lógicos para decidir a próxima ação. Mantenha todo o "
-                    "raciocínio interno e não o revele ao usuário."
-                ),
-                required_tools=["check_inbox"],
-            ),
-            AgentState.WORKING.value: StateConfig(
-                name=AgentState.WORKING.value,
-                instruction=(
-                    "Você está no modo WORKING. Execute as ações planejadas "
-                    "usando as ferramentas disponíveis. Documente cada passo."
-                ),
-            ),
-            AgentState.MONITORING.value: StateConfig(
-                name=AgentState.MONITORING.value,
-                instruction=(
-                    "Você está no modo MONITORING. Observe continuamente as fontes "
-                    "de eventos (inbox, tasks) e responda a novos eventos."
-                ),
-            ),
             AgentState.REQUEST_RECEIVED.value: StateConfig(
                 name=AgentState.REQUEST_RECEIVED.value,
                 instruction=(
-                    "Uma nova requisição foi recebida. Processar a entrada do usuário "
-                    "e preparar para transição ao modo THINKING."
+                    "Uma nova requisição foi recebida. Processar a entrada do usuário."
                 ),
             ),
             AgentState.INTERRUPTED.value: StateConfig(
