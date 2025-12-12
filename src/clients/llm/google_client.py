@@ -1,7 +1,7 @@
 from typing import Any, Optional
 import os
 
-from ..interfaces.base import ITextClient
+from ...interfaces.base import ITextClient
 
 # Lazy Import Strategy
 try:

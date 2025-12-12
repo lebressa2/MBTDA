@@ -586,7 +586,8 @@ class ContextManager:
         self,
         formatter: IFormatter | None = None,
         template: str | dict[str, Any] | None = None,
-        meta: MetaData | None = None
+        meta: MetaData | None = None,
+        initial_context: dict[str, Any] | None = None
     ):
         """
         Initialize the ContextManager.
@@ -596,21 +597,31 @@ class ContextManager:
             template: Template name (string) to load from registry, or a custom
                      template dictionary. Templates define the base context structure.
             meta: Optional MetaData instance for dynamic variables
-
-        Example:
-            # Using a built-in template by name
-            ctx = ContextManager(template="general_assistant")
-
-            # Using a custom template dictionary
-            ctx = ContextManager(template={
-                "identity": {"name": "{meta.agent_name}", "role": "Custom"},
-                "behavior": {"style": "concise"}
-            })
+            initial_context: Dictionary of context items to add immediately
         """
-        self.context: dict[str, Any] = {}
-        self.protocols: dict[str, Protocol] = {}
         self.formatter = formatter or self.base_formatter
         self.meta = meta or MetaData()
+        
+        # Load template
+        self._template: dict[str, Any] = {}
+        if isinstance(template, str):
+            loaded = TemplateRegistry.get(template)
+            if loaded:
+                self._template = _deep_copy_dict(loaded)
+        elif isinstance(template, dict):
+            self._template = _deep_copy_dict(template)
+            
+        # Initialize dynamic context
+        self.context: dict[str, Any] = {}
+        
+        # Initialize registries
+        self.protocols: dict[str, Protocol] = {}
+        self.providers: list[IContextProvider] = []
+        
+        # Add initial context if provided
+        if initial_context:
+            for key, value in initial_context.items():
+                self.add(key, value)
 
         # Component registry for automatic context contribution
         self._registered_components: dict[str, Any] = {}

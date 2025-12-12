@@ -92,6 +92,7 @@ class SandboxInterpreter(IContextProvider):
             "http": self._create_http_module(),
             "data": self._create_data_module(),
             "files": self._create_files_module(),
+            "weather": self._create_weather_module(),
         }
         
         # Module documentation
@@ -137,14 +138,27 @@ class SandboxInterpreter(IContextProvider):
                 name="files",
                 description="Workspace file operations",
                 functions={
-                    "read(path)": "Read file from workspace",
-                    "write(path, content)": "Write file to workspace",
-                    "list_dir(path='.')": "List directory contents",
+                    "read(path, layer=None)": "Read file. Optional layer: 'project', 'office', 'interpreter'",
+                    "write(path, content, layer='project')": "Write file. Default: project (or interpreter if enforced)",
+                    "move(src, s_layer, dest, d_layer, copy=False)": "Move/Copy between layers",
+                    "list_dir(path='.', layer='project')": "List directory contents",
                     "exists(path)": "Check if path exists",
                 },
                 examples=[
                     'from files import read, write; content = read("README.md")',
-                    'write("notes.md", "# My Notes")',
+                    'write("notes.md", "# My Notes", layer="office")',
+                    'from files import move; move("output.json", "interpreter", "data/output.json", "project", copy=True)',
+                ]
+            ),
+            ModuleInfo(
+                name="weather",
+                description="Weather data (mock)",
+                functions={
+                    "get(location)": "Get current weather for location, returns {temp, condition, humidity}",
+                    "forecast(location, days=3)": "Get weather forecast",
+                },
+                examples=[
+                    'from weather import get; w = get("Tokyo"); print(f"{w[\"temp\"]}°C")',
                 ]
             ),
         ]
@@ -301,18 +315,63 @@ class SandboxInterpreter(IContextProvider):
             """Workspace file operations."""
             
             @staticmethod
-            def read(path: str) -> str | None:
-                """Read a file from the workspace."""
+            def read(path: str, layer: str | None = None) -> str | None:
+                """Read a file from the workspace (optional: specify layer)."""
+                if layer and hasattr(workspace, 'read_file_from_layer'):
+                    from ..workspace.layered import WorkspaceLayer
+                    try:
+                        return workspace.read_file_from_layer(path, WorkspaceLayer(layer.lower()))
+                    except (ValueError, AttributeError):
+                        pass
                 return workspace.read_file(path)
             
             @staticmethod
-            def write(path: str, content: str) -> bool:
-                """Write a file to the workspace."""
+            def write(path: str, content: str, layer: str | None = None) -> bool:
+                """Write a file to the workspace (optional: specifying layer)."""
+                if layer and hasattr(workspace, 'write_file_to_layer'):
+                    from ..workspace.layered import WorkspaceLayer
+                    try:
+                         return workspace.write_file_to_layer(path, content, WorkspaceLayer(layer.lower()))
+                    except (ValueError, AttributeError):
+                         pass
+                
+                # Check for enforcement if no layer specified (default behavior)
+                if hasattr(workspace, 'enforce_layer_3_operation'):
+                     try:
+                         safe_path = workspace.enforce_layer_3_operation("write_file", path)
+                         safe_path.parent.mkdir(parents=True, exist_ok=True)
+                         safe_path.write_text(content, encoding='utf-8')
+                         return True
+                     except Exception:
+                         return False
+
                 return workspace.create_file(path, content)
             
             @staticmethod
-            def list_dir(path: str = ".") -> list[str]:
+            def move(source: str, s_layer: str, dest: str, d_layer: str, copy: bool = False) -> bool:
+                """Move or copy files between layers."""
+                if not hasattr(workspace, 'move_between_layers'):
+                    return False
+                
+                from ..workspace.layered import WorkspaceLayer
+                try:
+                    return workspace.move_between_layers(
+                        source, WorkspaceLayer(s_layer.lower()),
+                        dest, WorkspaceLayer(d_layer.lower()),
+                        copy_only=copy
+                    )
+                except (ValueError, AttributeError):
+                    return False
+
+            @staticmethod
+            def list_dir(path: str = ".", layer: str | None = None) -> list[str]:
                 """List directory contents."""
+                if layer and hasattr(workspace, 'list_directory'):
+                     from ..workspace.layered import WorkspaceLayer
+                     try:
+                         return workspace.list_directory(path, WorkspaceLayer(layer.lower()))
+                     except (ValueError, AttributeError):
+                         pass
                 return workspace.list_directory(path)
             
             @staticmethod
@@ -326,6 +385,43 @@ class SandboxInterpreter(IContextProvider):
                 return workspace.delete_file(path)
         
         return FilesModule
+    
+    def _create_weather_module(self) -> type:
+        """Create the weather module with mock weather data."""
+        import random
+        
+        class WeatherModule:
+            """Weather data module (mock implementation)."""
+            
+            @staticmethod
+            def get(location: str) -> dict:
+                """Get current weather for a location (mock data)."""
+                # Mock weather data
+                conditions = ["Sunny", "Cloudy", "Rainy", "Partly Cloudy", "Windy"]
+                return {
+                    "location": location,
+                    "temp": random.randint(10, 30),
+                    "condition": random.choice(conditions),
+                    "humidity": random.randint(40, 90),
+                    "wind_speed": random.randint(5, 25),
+                }
+            
+            @staticmethod
+            def forecast(location: str, days: int = 3) -> list[dict]:
+                """Get weather forecast for upcoming days (mock data)."""
+                conditions = ["Sunny", "Cloudy", "Rainy", "Partly Cloudy"]
+                forecast_data = []
+                for day in range(1, days + 1):
+                    forecast_data.append({
+                        "day": day,
+                        "location": location,
+                        "temp_high": random.randint(20, 35),
+                        "temp_low": random.randint(10, 20),
+                        "condition": random.choice(conditions),
+                    })
+                return forecast_data
+        
+        return WeatherModule
     
     def _build_execution_namespace(self) -> dict[str, Any]:
         """Build the namespace for code execution."""
@@ -518,11 +614,22 @@ class SandboxInterpreter(IContextProvider):
     
     def get_context_contribution(self) -> dict[str, Any]:
         """Get context contribution for the agent's system prompt."""
+        # Get module documentation
+        modules_doc = {}
+        for mod in self._builtin_modules:
+            # Include functions as description
+            funcs = ", ".join(mod.functions.keys()) if mod.functions else ""
+            modules_doc[mod.name] = f"{mod.description}. Functions: {funcs}"
+        
         return {
             "interpreter": {
                 "status": "ready",
-                "modules": [m.name for m in self.get_available_modules()],
+                "instruction": (
+                    "Use execute_code tool to run Python code. "
+                    "Import modules directly (from weather import get). "
+                    "Always use print() to show results."
+                ),
+                "modules": modules_doc,
                 "custom_modules": list(self._custom_modules.keys()),
-                "variables_in_scope": list(self._namespace.keys())[:20]
             }
         }

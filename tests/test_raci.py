@@ -490,5 +490,181 @@ print("Processing complete!")
         assert hasattr(raci, 'get_tool_descriptions')
 
 
+class TestSecurityFeatures:
+    """Tests for security features in LayeredWorkspaceManager."""
+    
+    @pytest.fixture
+    def workspace(self, tmp_path):
+        """Create a temporary workspace for testing."""
+        from src.components.workspace import LayeredWorkspaceManager
+        
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        
+        office_dir = tmp_path / "office"
+        
+        return LayeredWorkspaceManager(
+            base_path=str(project_dir),
+            agent_id="test_agent",
+            office_base=office_dir
+        )
+    
+    def test_security_error_exists(self):
+        """Test that SecurityError is exported."""
+        from src.components.workspace import SecurityError
+        
+        assert SecurityError is not None
+        
+        # Can be raised
+        with pytest.raises(SecurityError):
+            raise SecurityError("Test error")
+    
+    def test_enforce_layer_3_path_traversal_blocked(self, workspace):
+        """Test that path traversal is blocked."""
+        from src.components.workspace import SecurityError
+        
+        # Path with .. should raise SecurityError
+        with pytest.raises(SecurityError):
+            workspace.enforce_layer_3_operation("test", "../../etc/passwd")
+        
+        with pytest.raises(SecurityError):
+            workspace.enforce_layer_3_operation("test", "../secret")
+    
+    def test_enforce_layer_3_absolute_path_blocked(self, workspace):
+        """Test that absolute paths are blocked."""
+        from src.components.workspace import SecurityError
+        
+        # Absolute path should raise SecurityError
+        with pytest.raises(SecurityError):
+            workspace.enforce_layer_3_operation("test", "/etc/passwd")
+    
+    def test_enforce_layer_3_valid_path(self, workspace):
+        """Test that valid paths work correctly."""
+        from src.components.workspace import WorkspaceLayer
+        
+        # Valid relative path should return resolved path in INTERPRETER layer
+        result = workspace.enforce_layer_3_operation("test", "data.json")
+        
+        # Should be within INTERPRETER layer
+        interpreter_root = workspace.get_layer_root(WorkspaceLayer.INTERPRETER)
+        assert result.parent == interpreter_root
+        assert result.name == "data.json"
+    
+    def test_promote_file_to_project(self, workspace):
+        """Test file promotion from INTERPRETER to PROJECT."""
+        from src.components.workspace import WorkspaceLayer
+        
+        # Create file in INTERPRETER
+        workspace.create_file("result.txt", "Test result", WorkspaceLayer.INTERPRETER)
+        
+        # Promote to PROJECT
+        success = workspace.promote_file_to_project("result.txt", "output/result.txt")
+        
+        assert success is True
+        assert workspace.file_exists("output/result.txt", WorkspaceLayer.PROJECT)
+        
+        # Content should match
+        content = workspace.read_file("output/result.txt", WorkspaceLayer.PROJECT)
+        assert content == "Test result"
+    
+    def test_promote_nonexistent_file(self, workspace):
+        """Test promoting a file that doesn't exist."""
+        success = workspace.promote_file_to_project("nonexistent.txt", "output.txt")
+        assert success is False
+    
+    def test_audit_log_with_operation_type(self, workspace):
+        """Test that audit log includes operation_type and security_level."""
+        from src.components.workspace import WorkspaceLayer
+        
+        # Perform an operation
+        workspace.create_file("test.txt", "content", WorkspaceLayer.INTERPRETER)
+        
+        # Check audit log
+        log = workspace.get_audit_log()
+        assert len(log) > 0
+        
+        last_entry = log[-1]
+        assert "operation_type" in last_entry
+        assert "security_level" in last_entry
+        assert last_entry["security_level"] == "high"  # INTERPRETER layer
+
+
+class TestRACILayerIntegration:
+    """Tests for RACI integration with layered workspace."""
+    
+    @pytest.fixture
+    def raci_with_layered_workspace(self, tmp_path):
+        """Create RACI with LayeredWorkspaceManager."""
+        from src.components.workspace import LayeredWorkspaceManager
+        from src.components.interpreter import SandboxInterpreter
+        from src.components.tools import RACIToolManager
+        
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        
+        workspace = LayeredWorkspaceManager(
+            base_path=str(project_dir),
+            agent_id="test_agent",
+            office_base=tmp_path / "office"
+        )
+        
+        interpreter = SandboxInterpreter(workspace)
+        tools = RACIToolManager(interpreter, workspace)
+        
+        return tools, workspace
+    
+    def test_execute_code_returns_layer(self, raci_with_layered_workspace):
+        """Test that execute_code returns layer information."""
+        tools, _ = raci_with_layered_workspace
+        
+        result = tools.execute_tool("execute_code", code="print('hello')")
+        
+        assert "layer" in result
+        assert result["layer"] == "INTERPRETER"
+    
+    def test_write_file_uses_interpreter_layer(self, raci_with_layered_workspace):
+        """Test that write_file uses INTERPRETER layer."""
+        from src.components.workspace import WorkspaceLayer
+        
+        tools, workspace = raci_with_layered_workspace
+        
+        result = tools.execute_tool("write_file", path="output.txt", content="test data")
+        
+        assert result["success"] is True
+        assert result["layer"] == "INTERPRETER"
+        
+        # File should exist in INTERPRETER layer
+        assert workspace.file_exists("output.txt", WorkspaceLayer.INTERPRETER)
+        
+        # File should NOT exist in PROJECT layer (isolated)
+        assert not workspace.file_exists("output.txt", WorkspaceLayer.PROJECT)
+    
+    def test_read_file_uses_interpreter_layer(self, raci_with_layered_workspace):
+        """Test that read_file uses INTERPRETER layer."""
+        from src.components.workspace import WorkspaceLayer
+        
+        tools, workspace = raci_with_layered_workspace
+        
+        # Create file in INTERPRETER layer
+        workspace.create_file("data.txt", "secret data", WorkspaceLayer.INTERPRETER)
+        
+        result = tools.execute_tool("read_file", path="data.txt")
+        
+        assert result["success"] is True
+        assert result["content"] == "secret data"
+        assert result["layer"] == "INTERPRETER"
+    
+    def test_path_traversal_blocked_in_raci(self, raci_with_layered_workspace):
+        """Test that path traversal is blocked in RACI operations."""
+        tools, _ = raci_with_layered_workspace
+        
+        # Attempt path traversal
+        result = tools.execute_tool("read_file", path="../../etc/passwd")
+        
+        assert result["success"] is False
+        assert "error" in result
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

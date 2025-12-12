@@ -10,12 +10,13 @@ Provides workspace management implementations:
 
 from .base import WorkspaceManager
 from .local import LocalWorkspaceManager
-from .layered import LayeredWorkspaceManager, WorkspaceLayer
+from .layered import LayeredWorkspaceManager, WorkspaceLayer, SecurityError
 
 __all__ = [
     "WorkspaceManager",
     "LocalWorkspaceManager", 
     "LayeredWorkspaceManager",
-    "WorkspaceLayer"
+    "WorkspaceLayer",
+    "SecurityError"
 ]
 

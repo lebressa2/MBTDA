@@ -96,17 +96,20 @@ class RACIToolManager(IToolManager):
         
         class ReadFileTool:
             name = "read_file"
-            description = "Read the contents of a file from the project."
+            description = "Read file. Args: path (str), layer (str, optional: 'project', 'office', 'interpreter')"
             
             def __init__(self, manager: 'RACIToolManager'):
                 self._manager = manager
             
             def invoke(self, args: dict) -> dict[str, Any]:
-                return self._manager._read_file(args.get("path", ""))
+                return self._manager._read_file(
+                    args.get("path", ""), 
+                    args.get("layer")
+                )
         
         class WriteFileTool:
             name = "write_file"
-            description = "Write content to a file in the project."
+            description = "Write file. Args: path (str), content (str), layer (str, optional: 'project', 'office')"
             
             def __init__(self, manager: 'RACIToolManager'):
                 self._manager = manager
@@ -114,7 +117,27 @@ class RACIToolManager(IToolManager):
             def invoke(self, args: dict) -> dict[str, Any]:
                 return self._manager._write_file(
                     args.get("path", ""),
-                    args.get("content", "")
+                    args.get("content", ""),
+                    args.get("layer")
+                )
+        
+        class MoveFileTool:
+            name = "move_file"
+            description = (
+                "Move/Copy files between layers. "
+                "Args: source_path, source_layer, dest_path, dest_layer, copy_only (bool)"
+            )
+            
+            def __init__(self, manager: 'RACIToolManager'):
+                self._manager = manager
+                
+            def invoke(self, args: dict) -> dict[str, Any]:
+                return self._manager._move_file(
+                    args.get("source_path", ""),
+                    args.get("source_layer", ""),
+                    args.get("dest_path", ""),
+                    args.get("dest_layer", ""),
+                    args.get("copy_only", False)
                 )
         
         # Register tools
@@ -133,8 +156,13 @@ class RACIToolManager(IToolManager):
             "context": "raci",
             "description": WriteFileTool.description
         }
+        self._tools["move_file"] = {
+            "tool": MoveFileTool(self),
+            "context": "raci",
+            "description": MoveFileTool.description
+        }
         
-        self._contexts["raci"] = ["execute_code", "read_file", "write_file"]
+        self._contexts["raci"] = ["execute_code", "read_file", "write_file", "move_file"]
     
     # ==========================================================================
     # IToolManager IMPLEMENTATION
@@ -183,12 +211,6 @@ class RACIToolManager(IToolManager):
             name = getattr(t['tool'], 'name', 'Unknown')
             lines.append(f"- {name}: {t['description']}")
         
-        # Add interpreter modules info
-        if hasattr(self._interpreter, 'get_modules_context'):
-            lines.append("")
-            lines.append("Interpreter Modules:")
-            lines.append(self._interpreter.get_modules_context())
-        
         return "\n".join(lines)
     
     def execute_tool(self, tool_name: str, **kwargs) -> Any:
@@ -208,51 +230,119 @@ class RACIToolManager(IToolManager):
     # ==========================================================================
     
     def _execute_code(self, code: str) -> dict[str, Any]:
-        """Execute Python code in the interpreter."""
+        """
+        Execute Python code in the interpreter layer (Layer 3).
+        
+        All code execution happens in the INTERPRETER layer, ensuring
+        isolation from the PROJECT and OFFICE layers. The interpreter
+        has access to high-level modules (search, http, data, files).
+        
+        Args:
+            code: Python code to execute
+            
+        Returns:
+            dict with success, output, error, artifacts, execution_time, layer
+        """
         if not code:
-            return {"success": False, "error": "No code provided"}
+            return {"success": False, "error": "No code provided", "layer": "INTERPRETER"}
         
         if len(code) > self._max_code_length:
             return {
                 "success": False,
-                "error": f"Code exceeds maximum length of {self._max_code_length} characters"
+                "error": f"Code exceeds maximum length of {self._max_code_length} characters",
+                "layer": "INTERPRETER"
             }
         
+        # Execute in interpreter (always Layer 3)
         result = self._interpreter.execute(code)
-        return result.to_dict()
+        result_dict = result.to_dict()
+        result_dict["layer"] = "INTERPRETER"
+        return result_dict
     
-    def _read_file(self, path: str) -> dict[str, Any]:
-        """Read a file from the workspace."""
+    def _read_file(self, path: str, layer: str | None = None) -> dict[str, Any]:
+        """Read file with optional layer specification."""
         if not path:
             return {"success": False, "error": "No path provided"}
-        
-        content = self._workspace.read_file(path)
-        
+            
+        # Helper to convert string layer to enum if using layered workspace
+        workspace_layer = None
+        if layer and hasattr(self._workspace, 'get_layer_root'):
+            from ..workspace.layered import WorkspaceLayer
+            try:
+                workspace_layer = WorkspaceLayer(layer.lower())
+            except ValueError:
+                pass  # Fallback to default behavior if invalid layer
+
+        # If layered workspace, allow reading from specific layer
+        if hasattr(self._workspace, 'read_file_from_layer') and workspace_layer:
+             content = self._workspace.read_file_from_layer(path, workspace_layer)
+        else:
+             # Standard read (or auto-resolved in layered workspace)
+             content = self._workspace.read_file(path)
+
         if content is None:
-            return {"success": False, "error": f"File not found: {path}"}
-        
+             return {"success": False, "error": f"File not found: {path} (layer: {layer})", "path": path}
+             
         return {
             "success": True,
             "path": path,
             "content": content,
-            "length": len(content)
+            "length": len(content),
+            "layer": layer or "auto"
         }
     
-    def _write_file(self, path: str, content: str) -> dict[str, Any]:
-        """Write a file to the workspace."""
+    def _write_file(self, path: str, content: str, layer: str | None = None) -> dict[str, Any]:
+        """Write file with optional layer specification."""
         if not path:
-            return {"success": False, "error": "No path provided"}
+             return {"success": False, "error": "No path provided"}
+
+        # Helper to convert string layer to enum
+        workspace_layer = None
+        if layer and hasattr(self._workspace, 'get_layer_root'):
+             from ..workspace.layered import WorkspaceLayer
+             try:
+                 workspace_layer = WorkspaceLayer(layer.lower())
+             except ValueError:
+                 pass
+
+        if hasattr(self._workspace, 'write_file_to_layer') and workspace_layer:
+             success = self._workspace.write_file_to_layer(path, content, workspace_layer)
+             return {
+                 "success": success,
+                 "path": path,
+                 "bytes_written": len(content) if success else 0,
+                 "layer": layer
+             }
         
+        # Original logic for default writing or INTERPRETER enforcement
+        # If no explicit layer, check for enforcement (default behavior)
+        if hasattr(self._workspace, 'enforce_layer_3_operation') and not layer:
+             try:
+                 safe_path = self._workspace.enforce_layer_3_operation("write_file", path)
+                 safe_path.parent.mkdir(parents=True, exist_ok=True)
+                 safe_path.write_text(content, encoding='utf-8')
+                 return {"success": True, "path": path, "bytes_written": len(content), "layer": "INTERPRETER"}
+             except Exception as e:
+                 return {"success": False, "error": str(e), "layer": "INTERPRETER"}
+
+        # Fallback
         success = self._workspace.create_file(path, content)
-        
-        if success:
-            return {
-                "success": True,
-                "path": path,
-                "bytes_written": len(content)
-            }
-        else:
-            return {"success": False, "error": f"Failed to write to: {path}"}
+        return {"success": success, "path": path, "bytes_written": len(content) if success else 0}
+    
+    def _move_file(self, source: str, s_layer: str, dest: str, d_layer: str, copy: bool) -> dict[str, Any]:
+        """Move/Copy file between layers."""
+        if not hasattr(self._workspace, 'move_between_layers'):
+            return {"success": False, "error": "Workspace does not support layering"}
+            
+        from ..workspace.layered import WorkspaceLayer
+        try:
+            sl = WorkspaceLayer(s_layer.lower())
+            dl = WorkspaceLayer(d_layer.lower())
+            
+            success = self._workspace.move_between_layers(source, sl, dest, dl, copy_only=copy)
+            return {"success": success, "source": f"{s_layer}:{source}", "dest": f"{d_layer}:{dest}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
     # ==========================================================================
     # CONTEXT CONTRIBUTION
@@ -267,7 +357,7 @@ class RACIToolManager(IToolManager):
         context = {
             "available_tools": self.get_tool_descriptions(),
             "tool_mode": "raci_interpreter",
-            "tools": ["execute_code", "read_file", "write_file"]
+            "tools": ["execute_code", "read_file", "write_file", "move_file"]
         }
         
         # Add interpreter context if available
@@ -294,20 +384,23 @@ class RACIToolManager(IToolManager):
                 StructuredTool.from_function(
                     func=lambda code: self._execute_code(code),
                     name="execute_code",
-                    description=(
-                        "Execute Python code with modules: search, http, data, files. "
-                        "Returns execution result."
-                    ),
+                    description="Execute Python code. Modules: weather, search, http, data, files.",
                 ),
                 StructuredTool.from_function(
-                    func=lambda path: self._read_file(path),
+                    func=lambda path, layer=None: self._read_file(path, layer),
                     name="read_file",
-                    description="Read a file from the project.",
+                    description="Read file. Args: path, layer (project/office/interpreter).",
                 ),
                 StructuredTool.from_function(
-                    func=lambda path, content: self._write_file(path, content),
+                    func=lambda path, content, layer=None: self._write_file(path, content, layer),
                     name="write_file",
-                    description="Write content to a file in the project.",
+                    description="Write file. Args: path, content, layer (project/office).",
+                ),
+                StructuredTool.from_function(
+                    func=lambda source_path, source_layer, dest_path, dest_layer, copy_only=False: 
+                        self._move_file(source_path, source_layer, dest_path, dest_layer, copy_only),
+                    name="move_file",
+                    description="Move/Copy between layers. Layers: project, office, interpreter.",
                 ),
             ]
             
@@ -315,3 +408,4 @@ class RACIToolManager(IToolManager):
         except ImportError:
             # LangChain not available
             return self.get_tools()
+

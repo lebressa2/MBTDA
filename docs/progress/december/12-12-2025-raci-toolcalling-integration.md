@@ -1,6 +1,6 @@
 # 🚀 Plano de Implementação: Integração RACI com Layered Workspace
 
-**Data**: 11/12/2025
+**Data**: 12/12/2025
 **Etapa**: Toolcalling com RACI e Melhorias no Workspace
 **Prioridade**: Alta
 
@@ -23,17 +23,17 @@ Esta etapa foca na integração completa entre o RACIToolManager e o LayeredWork
 
 ## 🔧 Decisões de Design
 
-### 1. Auto-Mode (Futuro)
+### 1. Auto-Mode (Futuro, **!!NÃO IMPLEMENTAR!!**)
 - **Abordagem**: Implementar ambos os enfoques (LLM dedicado vs mesmo LLM com prompt especializado)
 - **Testes**: Comparar performance objetivamente antes de decidir
 - **Prioridade**: Após conclusão do toolcalling RACI
 
-### 2. Layered Workspace
+### 2. Layered Workspace(**Implementar**)
 - **Sistema de Promoção**: Sim, adicionar capacidade de mover arquivos entre camadas
 - **Segurança**: Validar todos os paths para prevenir path traversal
 - **Auditoria**: Rastrear todas as operações com detalhes de camada
 
-### 3. Integração RACI
+### 3. Integração RACI(**Implementar**)
 - **Execução de Código**: Sempre forçar Layer 3 (INTERPRETER)
 - **Operações de Arquivo**: Validar camadas e prevenir escapes
 - **Compatibilidade**: Manter interface existente do RACIToolManager
@@ -200,11 +200,16 @@ def test_raci_layer_3_execution():
 
 ## 📈 Métricas de Sucesso
 
-1. **100% das execuções de código acontecem no Layer 3**
+1. **100% das execuções de ferramentas acontecem com código python no Layer 3 (LLM escrever código python com módulos prontos)**
 2. **0% de operações perigosas (path traversal) conseguem escapar**
 3. **Sistema de promoção funciona corretamente para 100% dos casos de teste**
 4. **Auditoria registra corretamente todas as operações com informações de camada**
 5. **Performance não é impactada negativamente pelas validações adicionais**
+
+---
+
+## EXEMPLO DO LLM USANDO RACI
+<tool_code> print(search.web(query=["dieta para manter energia e disposição", "comer mais calorias aumenta energia", "nutrientes essenciais para energia física e mental", "otimização energética através da alimentação"]))</tool_code>
 
 ---
 

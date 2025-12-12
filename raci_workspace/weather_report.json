@@ -1,0 +1,23 @@
+[
+  {
+    "temp": 28,
+    "condition": "Ensolarado",
+    "humidity": 65,
+    "location": "São Paulo",
+    "source": "mock"
+  },
+  {
+    "temp": 22,
+    "condition": "Sunny",
+    "humidity": 60,
+    "location": "Tokyo",
+    "source": "mock"
+  },
+  {
+    "temp": 8,
+    "condition": "Rainy",
+    "humidity": 90,
+    "location": "London",
+    "source": "mock"
+  }
+]

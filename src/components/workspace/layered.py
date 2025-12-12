@@ -22,6 +22,19 @@ from typing import Any
 from ...interfaces.base import IWorkspaceManager
 
 
+class SecurityError(Exception):
+    """
+    Raised when a security violation is detected.
+    
+    Examples:
+    - Path traversal attempts (using '..' or absolute paths)
+    - Attempts to escape layer boundaries
+    - Unauthorized operations on protected layers
+    """
+    pass
+
+
+
 class WorkspaceLayer(Enum):
     """
     The three layers of the agent's workspace.
@@ -161,14 +174,33 @@ class LayeredWorkspaceManager(IWorkspaceManager):
         
         return resolved
     
-    def _log_action(self, action: str, path: str, success: bool, layer: WorkspaceLayer | None = None) -> None:
-        """Log an action to the audit log."""
+    def _log_action(
+        self, 
+        action: str, 
+        path: str, 
+        success: bool, 
+        layer: WorkspaceLayer | None = None,
+        operation_type: str = "default"
+    ) -> None:
+        """
+        Log an action to the audit log with detailed information.
+        
+        Args:
+            action: Name of the action (e.g., 'create_file', 'promote_file')
+            path: Path involved in the action
+            success: Whether the action succeeded
+            layer: Layer where action occurred (None = default layer)
+            operation_type: Type of operation ('default', 'promotion', 'security')
+        """
+        effective_layer = layer or self._default_layer
         self._audit_log.append({
             "action": action,
             "path": path,
-            "layer": (layer or self._default_layer).value,
+            "layer": effective_layer.value,
             "success": success,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "operation_type": operation_type,
+            "security_level": "high" if effective_layer == WorkspaceLayer.INTERPRETER else "medium"
         })
     
     # ==========================================================================
@@ -286,17 +318,75 @@ class LayeredWorkspaceManager(IWorkspaceManager):
     # LAYER-SPECIFIC METHODS
     # ==========================================================================
     
-    def copy_between_layers(
+    def enforce_layer_3_operation(self, operation_name: str, path: str) -> Path:
+        """
+        Enforce that dangerous operations happen in Layer 3 (INTERPRETER).
+        
+        Validates the path for security issues and returns the resolved path
+        within the INTERPRETER layer. Use this for any operation that could
+        be exploited through path traversal or escaping.
+        
+        Args:
+            operation_name: Name of the operation (for error messages)
+            path: Relative path to validate
+            
+        Returns:
+            Path: Resolved absolute path within INTERPRETER layer
+            
+        Raises:
+            SecurityError: If path traversal attempt is detected
+            
+        Example:
+            safe_path = workspace.enforce_layer_3_operation("read_file", "data.json")
+            # Now safe_path is guaranteed to be within INTERPRETER layer
+        """
+        # Check for path traversal attempts
+        if path.startswith('/') or path.startswith('\\'):
+            self._log_action(
+                f"security_block_{operation_name}", path, False,
+                WorkspaceLayer.INTERPRETER, "security"
+            )
+            raise SecurityError(f"Absolute path not allowed in {operation_name}: {path}")
+        
+        if '..' in path:
+            self._log_action(
+                f"security_block_{operation_name}", path, False,
+                WorkspaceLayer.INTERPRETER, "security"
+            )
+            raise SecurityError(f"Path traversal attempt in {operation_name}: {path}")
+        
+        # Resolve and validate within INTERPRETER layer
+        resolved = self._resolve_path(path, WorkspaceLayer.INTERPRETER)
+        
+        self._log_action(
+            f"security_check_{operation_name}", path, True,
+            WorkspaceLayer.INTERPRETER, "security"
+        )
+        
+        return resolved
+    
+    def move_between_layers(
         self,
         source_path: str,
         source_layer: WorkspaceLayer,
         dest_path: str,
-        dest_layer: WorkspaceLayer
+        dest_layer: WorkspaceLayer,
+        copy_only: bool = False
     ) -> bool:
         """
-        Copy a file between layers.
+        Move or copy a file between layers.
         
-        Useful for promoting artifacts from INTERPRETER to PROJECT/OFFICE.
+        Generalizes promotion/demotion/copying between any layers.
+        
+        Args:
+            source_path: Path in source layer
+            source_layer: Source layer enum
+            dest_path: Path in destination layer
+            dest_layer: Destination layer enum
+            copy_only: If True, keep source file (copy). If False, delete source (move).
+            
+        Returns:
+            bool: True if operation succeeded
         """
         try:
             source = self._resolve_path(source_path, source_layer)
@@ -305,16 +395,62 @@ class LayeredWorkspaceManager(IWorkspaceManager):
             if not source.exists():
                 return False
             
+            # Ensure destination directory exists
             dest.parent.mkdir(parents=True, exist_ok=True)
             
-            if source.is_file():
-                shutil.copy2(source, dest)
-            elif source.is_dir():
-                shutil.copytree(source, dest, dirs_exist_ok=True)
+            operation = "copy" if copy_only else "move"
             
+            if source.is_file():
+                if copy_only:
+                    shutil.copy2(source, dest)
+                else:
+                    shutil.move(source, dest)
+            elif source.is_dir():
+                if copy_only:
+                    shutil.copytree(source, dest, dirs_exist_ok=True)
+                else:
+                    shutil.move(source, dest)
+            
+            self._log_action(
+                f"{operation}_between_layers",
+                f"{source_layer.value}:{source_path} -> {dest_layer.value}:{dest_path}",
+                True,
+                dest_layer,
+                operation
+            )
             return True
-        except Exception:
+            
+        except Exception as e:
+            self._log_action(
+                f"{'copy' if copy_only else 'move'}_failure",
+                f"{source_layer.value}:{source_path} -> {dest_layer.value}:{dest_path}: {e}",
+                False,
+                dest_layer,
+                "error"
+            )
             return False
+
+    def promote_file_to_project(self, interpreter_path: str, project_path: str) -> bool:
+        """Alias for move_between_layers(copy=True) for backward compatibility."""
+        return self.move_between_layers(
+            interpreter_path, WorkspaceLayer.INTERPRETER,
+            project_path, WorkspaceLayer.PROJECT,
+            copy_only=True
+        )
+
+    def copy_between_layers(
+        self,
+        source_path: str,
+        source_layer: WorkspaceLayer,
+        dest_path: str,
+        dest_layer: WorkspaceLayer
+    ) -> bool:
+        """Alias for move_between_layers(copy=True)."""
+        return self.move_between_layers(
+            source_path, source_layer,
+            dest_path, dest_layer,
+            copy_only=True
+        )
     
     def clear_interpreter(self) -> None:
         """Clear all files in the interpreter layer."""
