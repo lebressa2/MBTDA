@@ -16,7 +16,9 @@ from ..interfaces.base import (
     IToolManager,
     ILogger,
     IWorkspaceManager,
+    IRunner,
 )
+from ..runners.sync_runner import SyncRunner
 
 def create_react_agent(
     text_provider: ITextClient,
@@ -24,17 +26,37 @@ def create_react_agent(
     memory: IMemoryManager | None = None,
     workspace_manager: IWorkspaceManager | None = None,
     logger: ILogger | None = None,
+    runner: IRunner | None = None,
     **kwargs
 ) -> Agent:
     """
     Create an Agent configured with the ReAct pattern.
+
+    Uses SyncRunner by default for request/response behavior.
+    Pass a ReactiveRunner to enable reactive monitoring mode.
+
+    Args:
+        text_provider: LLM client for text generation
+        tools: Tool manager (optional)
+        memory: Memory manager (optional)
+        workspace_manager: Workspace manager (optional)
+        logger: Logger (optional)
+        runner: Execution strategy (defaults to SyncRunner for ReAct)
+
+    Returns:
+        Agent configured with ReAct states and transitions
     """
+    # Use SyncRunner by default for ReAct pattern
+    if runner is None:
+        runner = SyncRunner()
+
     agent = Agent(
         text_provider=text_provider,
         tools=tools,
         memory=memory,
         workspace_manager=workspace_manager,
         logger=logger,
+        runner=runner,
         **kwargs
     )
     
@@ -168,14 +190,14 @@ def create_react_agent(
     )
 
     # --- Register Transitions ---
-    
-    # IDLE -> THINKING (Triggered by process_message)
+
+    # IDLE -> THINKING (Triggered by message via runner)
     sm.add_transition(Transition(
         source=AgentState.IDLE.value,
         target=AgentState.THINKING.value,
         trigger="message",
         priority=10,
-        on_enter=reset_steps # Reset steps when starting new task
+        on_enter=reset_steps  # Reset steps when starting new task
     ))
     
     # THINKING -> WORKING (If tool calls)
@@ -211,3 +233,19 @@ def create_react_agent(
     ))
     
     return agent
+
+
+def chat(message: str, text_provider: ITextClient, **kwargs) -> str:
+    """
+    Convenience function to create a ReAct agent and chat immediately.
+
+    Args:
+        message: User message to process
+        text_provider: LLM client
+        **kwargs: Additional arguments for create_react_agent
+
+    Returns:
+        Agent response
+    """
+    agent = create_react_agent(text_provider=text_provider, **kwargs)
+    return agent.chat(message)

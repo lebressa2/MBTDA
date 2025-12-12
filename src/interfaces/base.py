@@ -1106,6 +1106,32 @@ class IKnowledgeBaseAsync(IContextProvider):
 # EMBEDDING PROVIDER INTERFACE
 # ==============================================================================
 
+# ==============================================================================
+# RUNNER INTERFACE
+# ==============================================================================
+
+from abc import ABC, abstractmethod
+from typing import Any
+
+class IRunner(ABC):
+    @abstractmethod
+    def set_agent_reference(self, agent):
+        """Define a referência do agente para o runner"""
+        pass
+
+    @abstractmethod
+    def start(self) -> None:
+        """Inicia a execução do agente (blocking)"""
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Para a execução de forma segura"""
+
+
+# ==============================================================================
+# EMBEDDING PROVIDER INTERFACE
+# ==============================================================================
+
 class IEmbedderProvider(ABC):
     """
     Interface for text embedding providers.

@@ -4,7 +4,6 @@ Main Agent Class for the Agent Framework.
 Supports both Synchronous (Request/Response) and Reactive (Monitoring/Event-Driven) modes.
 """
 
-import time
 from typing import Any
 
 from .components import ContextManager, StateMachine
@@ -13,13 +12,14 @@ from .interfaces.base import (
     ILifeCycle,
     ILogger,
     IMemoryManager,
+    IRunner,
     ITaskManager,
     ITextClient,
     IToolManager,
     IWatchdog,
     IWorkspaceManager,
 )
-from .models.data_models import AgentEvent, Protocol
+from .models.data_models import Protocol
 
 
 class Agent:
@@ -28,10 +28,11 @@ class Agent:
 
     The Agent is a thin container that orchestrates all components to provide
     intelligent behavior through LLM-powered reasoning and tool execution.
-    
+
     Responsibilities are delegated to specialized components:
     - ContextManager: System prompt building, protocol management, context contributions
     - StateMachine: State transitions, monitoring mode control, status reporting
+    - Runner: Execution logic for synchronous and reactive modes
     - Memory/Tools/Workspace: Data management and operations
 
     Attributes:
@@ -40,6 +41,7 @@ class Agent:
         memory: Memory manager for conversation history
         tools: Tool manager for available actions
         state_machine: State machine for operation flow control
+        runner: Execution strategy (sync/async)
         watchdog: Timer and polling control for reactive mode
         logger: Logging interface
         life_manager: Resource and lifecycle management
@@ -57,6 +59,7 @@ class Agent:
         logger: ILogger | None = None,
         life_manager: ILifeCycle | None = None,
         workspace_manager: IWorkspaceManager | None = None,
+        runner: IRunner | None = None,
         inbox_client: IInboxClient | None = None,
         task_manager: ITaskManager | None = None
     ):
@@ -86,13 +89,11 @@ class Agent:
         self.logger = logger
         self.life_manager = life_manager
         self.workspace_manager = workspace_manager
+        self.runner = runner
 
         # Monitoring clients
         self.inbox_client = inbox_client
         self.task_client = task_manager
-
-        # Internal state
-        self._event_queue: list[AgentEvent] = []
 
         # Register components for automatic context contribution
         self.context.discover_components(self)
@@ -100,50 +101,15 @@ class Agent:
         # Set agent reference in state machine
         self.state_machine.set_agent_reference(self)
 
+        # Set agent reference in runner
+        if self.runner:
+            self.runner.set_agent_reference(self)
+
     # ==========================================================================
     # MESSAGE HANDLING (Thin interface - delegates to StateMachine)
     # ==========================================================================
 
-    def process_message(self, input_message: str, **kwargs) -> Any:
-        """
-        Process an incoming message.
-        
-        This initiates the agent's processing loop by triggering the 'message' event.
-        The StateMachine controls the flow (e.g., THINKING -> WORKING -> THINKING).
 
-        Args:
-            input_message: The message to process
-            **kwargs: Additional context
-
-        Returns:
-            The final response from the agent
-        """
-        if self.logger:
-            self.logger.info(f"Processing message: {input_message[:50]}...")
-
-        # Store message in memory
-        if self.memory:
-            self.memory.add_message("user", input_message)
-
-        # Trigger the message event
-        # This should transition IDLE -> THINKING (if configured)
-        self.state_machine.trigger("message", self)
-        
-        # In a synchronous implementation using callbacks (like ReActAgent),
-        # the trigger chain (THINKING -> WORKING -> THINKING...) will run recursively
-        # until it hits a state that stops (IDLE).
-        # So when trigger returns, the work is done.
-        
-        # We return the last message from memory as the response
-        if self.memory:
-            messages = self.memory.get_recent_messages()
-            if messages:
-                last_msg = messages[-1]
-                if isinstance(last_msg, dict):
-                    return last_msg.get("content")
-                return last_msg.content
-        
-        return "No response generated."
 
     def invoke_llm(self, messages: list[dict], **kwargs) -> Any:
         """
@@ -174,117 +140,10 @@ class Agent:
         """
         return self.context.build_system_prompt(self.state_machine)
 
-    # ==========================================================================
-    # REACTIVE MODE - Monitoring/Event-Driven
-    # ==========================================================================
 
-    def start_monitoring(self, sources: list[str] | None = None) -> None:
-        """
-        REACTIVE MODE (Monitoring/Event-Driven).
 
-        Starts a continuous observation loop for inbox and tasks.
 
-        Args:
-            sources: List of sources to monitor ('inbox', 'tasks')
-        """
-        if sources is None:
-            sources = ['inbox', 'tasks']
-        if self.logger:
-            self.logger.info(f"Starting monitoring mode for: {sources}")
 
-        # Transition to MONITORING state (delegated to StateMachine)
-        self.state_machine.start_monitoring(self)
-
-        poll_interval = self.watchdog.get_poll_interval() if self.watchdog else 30.0
-
-        try:
-            while self.state_machine.is_monitoring():
-                events_detected = []
-
-                # Check inbox
-                if 'inbox' in sources and self.inbox_client:
-                    new_emails = self.inbox_client.check_new_emails()
-                    for email in new_emails:
-                        events_detected.append(AgentEvent.from_email(email))
-                        if self.logger:
-                            self.logger.info(f"New email detected: {email.subject}")
-
-                # Check tasks
-                if 'tasks' in sources and self.task_client:
-                    self.task_client.get_pending_tasks()  # Check for pending tasks
-                    overdue_tasks = self.task_client.get_overdue_tasks()
-
-                    for task in overdue_tasks:
-                        events_detected.append(AgentEvent.from_task(task))
-                        if self.logger:
-                            self.logger.warning(f"Overdue task: {task.title}")
-
-                # Process detected events
-                for event in sorted(events_detected, key=lambda e: e.priority, reverse=True):
-                    self.process_event(event)
-
-                # Wait for next poll
-                if self.state_machine.is_monitoring():
-                    time.sleep(poll_interval)
-
-        except KeyboardInterrupt:
-            if self.logger:
-                self.logger.info("Monitoring stopped by user")
-        finally:
-            self.state_machine.stop_monitoring(self)
-
-    def stop_monitoring(self) -> None:
-        """Stop the monitoring loop (delegated to StateMachine)."""
-        self.state_machine.stop_monitoring(self)
-        if self.logger:
-            self.logger.info("Monitoring stopped")
-
-    def process_event(self, event: AgentEvent) -> Any:
-        """
-        Process a detected event.
-        
-        Delegates to the state machine to handle the event.
-
-        Args:
-            event: The event to process
-
-        Returns:
-            The agent's response/action for the event
-        """
-        if self.logger:
-            self.logger.info(f"Processing event: {event.event_type} from {event.source}")
-
-        # Update context with event data
-        self.context.add("current_event", event.model_dump())
-
-        # Trigger event in state machine
-        # The StateMachine configuration determines what happens next
-        # (e.g., transition to THINKING, or handle immediately)
-        trigger_name = f"event:{event.event_type}"
-        transitioned = self.state_machine.trigger(trigger_name, self)
-        
-        if not transitioned:
-             # Fallback if no specific transition is defined
-             # We treat it as a message to be processed if possible, or just log it
-             pass
-
-        # Build event-specific message for the LLM/Processing loop
-        if event.event_type == "inbox":
-            message = f"New email received. Subject: {event.data.get('subject')}. From: {event.data.get('sender')}. Preview: {event.data.get('body_snippet')}"
-        elif event.event_type == "task":
-            message = f"Task requires attention. Title: {event.data.get('title')}. Priority: {event.data.get('priority')}. Status: {event.data.get('status')}"
-        else:
-            message = f"Event received: {event.event_type} - {event.data}"
-
-        # If the state machine transitioned to a state that handles processing (like THINKING),
-        # we might want to invoke the processing loop.
-        # For a generic Agent, we can just return the message or delegate.
-        # Here we assume if we transitioned, we might want to 'handle_message' or similar.
-        
-        # For now, we'll just return the message as a signal.
-        # The ReAct specific logic of "force_transition(THINKING)" is removed.
-        
-        return message
 
     # ==========================================================================
     # PROTOCOL MANAGEMENT (delegated to ContextManager)
@@ -309,6 +168,35 @@ class Agent:
     def is_monitoring(self) -> bool:
         """Check if agent is in monitoring mode (delegated to StateMachine)."""
         return self.state_machine.is_monitoring()
+
+    def run_with(self, runner: IRunner) -> None:
+        """Execute agent with specified runner strategy.
+
+        Args:
+            runner: Execution strategy (SyncRunner or ReactiveRunner)
+        """
+        self.runner = runner
+        runner.set_agent_reference(self)
+        runner.start()
+
+    def stop(self) -> None:
+        """Stop current runner if running."""
+        if self.runner:
+            self.runner.stop()
+
+    def chat(self, message: str) -> str:
+        """Convenience method for synchronous chat (single message).
+
+        Args:
+            message: User message to process
+
+        Returns:
+            str: Agent response
+        """
+        from .runners.sync_runner import SyncRunner
+        runner = SyncRunner(message)
+        runner.set_agent_reference(self)
+        return runner.start()
 
     def get_status(self) -> dict[str, Any]:
         """Get a summary of the agent's current status (delegated to StateMachine)."""
