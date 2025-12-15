@@ -5,8 +5,8 @@ Mock Task Client for testing and development.
 import uuid
 from datetime import datetime
 
-from ...interfaces.base import ITaskManager
-from ...models.data_models import TaskItem, TaskStatus
+from ..interfaces.base import ITaskManager
+from models.data_models import TaskItem, TaskStatus
 
 
 class MockTaskClient(ITaskManager):
@@ -51,4 +51,3 @@ class MockTaskClient(ITaskManager):
             t for t in self._tasks.values()
             if t.due_date and t.due_date < now and t.status == TaskStatus.PENDING.value
         ]
-

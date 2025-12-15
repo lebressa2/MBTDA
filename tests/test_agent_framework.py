@@ -20,11 +20,12 @@ load_dotenv()
 
 from src.interfaces.base import ITextClient, LogLevel
 from src.agent import Agent
+from src.agents.react_agent import create_react_agent
 from src.components import (
     ContextManager, StateMachine, ConsoleLogger,
     InMemoryManager, ToolManager, WorkspaceManager, LocalWorkspaceManager, Watchdog
 )
-from src.models import Protocol, ProtocolStep, AgentState
+from src.models import Protocol, ProtocolStep, AgentState, Transition
 
 # Import real clients
 from tests.clients import get_text_client, GroqTextClient, GoogleTextClient
@@ -68,7 +69,8 @@ def test_basic_agent():
         text_client = get_text_client()
         
         # Create agent with minimal components
-        agent = DebugAgent(
+        # Use create_react_agent to get the standard behavior
+        agent = create_react_agent(
             text_provider=text_client,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
         )
@@ -108,7 +110,7 @@ def test_agent_with_memory():
         text_client = get_text_client()
         memory = InMemoryManager(short_term_limit=10)
         
-        agent = DebugAgent(
+        agent = create_react_agent(
             text_provider=text_client,
             memory=memory,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
@@ -198,7 +200,7 @@ def test_agent_with_tools():
             )
         )
         
-        agent = DebugAgent(
+        agent = create_react_agent(
             text_provider=text_client,
             tools=tool_manager,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
@@ -255,7 +257,7 @@ def test_agent_with_workspace():
         if os.path.exists(workspace.base_path):
             shutil.rmtree(workspace.base_path)
         
-        agent = DebugAgent(
+        agent = create_react_agent(
             text_provider=text_client,
             workspace_manager=workspace,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
@@ -308,7 +310,7 @@ def test_agent_with_protocol():
     try:
         text_client = get_text_client()
         
-        agent = DebugAgent(
+        agent = create_react_agent(
             text_provider=text_client,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
         )
@@ -373,7 +375,8 @@ def test_state_machine():
     try:
         text_client = get_text_client()
         
-        agent = DebugAgent(
+        # Use create_react_agent to ensure we have transitions
+        agent = create_react_agent(
             text_provider=text_client,
             logger=ConsoleLogger(min_level=LogLevel.DEBUG)
         )
@@ -443,7 +446,7 @@ def test_full_integration():
         )
         
         # Create fully configured agent
-        agent = DebugAgent(
+        agent = create_react_agent(
             text_provider=text_client,
             memory=memory,
             tools=tool_manager,
@@ -490,7 +493,7 @@ def test_advanced_state_machine():
     
     try:
         text_client = get_text_client()
-        agent = DebugAgent(
+        agent = Agent(
             text_provider=text_client,
             logger=ConsoleLogger(min_level=LogLevel.DEBUG)
         )

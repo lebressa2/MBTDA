@@ -84,6 +84,7 @@ class StateMachine:
         self.previous_state: str | None = None
         self.state_history: list[dict[str, Any]] = []
         self._agent_ref: Any | None = None
+        self._is_monitoring: bool = False
 
         # Register default states
         self._register_default_states()
@@ -95,35 +96,10 @@ class StateMachine:
                 name=AgentState.IDLE.value,
                 instruction="Você está no estado IDLE. Aguardando instruções ou eventos.",
             ),
-            AgentState.THINKING.value: StateConfig(
-                name=AgentState.THINKING.value,
-                instruction=(
-                    "Você é um Agente ReAct e está entrando no modo THINKING. "
-                    "Analise o contexto, formule hipóteses, avalie opções e planeje "
-                    "passos lógicos para decidir a próxima ação. Mantenha todo o "
-                    "raciocínio interno e não o revele ao usuário."
-                ),
-                required_tools=["check_inbox"],
-            ),
-            AgentState.WORKING.value: StateConfig(
-                name=AgentState.WORKING.value,
-                instruction=(
-                    "Você está no modo WORKING. Execute as ações planejadas "
-                    "usando as ferramentas disponíveis. Documente cada passo."
-                ),
-            ),
-            AgentState.MONITORING.value: StateConfig(
-                name=AgentState.MONITORING.value,
-                instruction=(
-                    "Você está no modo MONITORING. Observe continuamente as fontes "
-                    "de eventos (inbox, tasks) e responda a novos eventos."
-                ),
-            ),
             AgentState.REQUEST_RECEIVED.value: StateConfig(
                 name=AgentState.REQUEST_RECEIVED.value,
                 instruction=(
-                    "Uma nova requisição foi recebida. Processar a entrada do usuário "
-                    "e preparar para transição ao modo THINKING."
+                    "Uma nova requisição foi recebida. Processar a entrada do usuário."
                 ),
             ),
             AgentState.INTERRUPTED.value: StateConfig(
@@ -438,3 +414,75 @@ class StateMachine:
         self.current_state = initial_state
         self.previous_state = None
         self.state_history.clear()
+        self._is_monitoring = False
+
+    # ==========================================================================
+    # MONITORING CONTROL
+    # ==========================================================================
+
+    def is_monitoring(self) -> bool:
+        """Check if the state machine is in monitoring mode."""
+        return self._is_monitoring
+
+    def start_monitoring(self, agent: Any | None = None) -> bool:
+        """
+        Start monitoring mode.
+
+        Transitions to MONITORING state and sets the monitoring flag.
+
+        Args:
+            agent: Optional agent reference for callbacks
+
+        Returns:
+            bool: True if monitoring started successfully
+        """
+        agent = agent or self._agent_ref
+        self._is_monitoring = True
+        return self.trigger("mode:monitoring", agent)
+
+    def stop_monitoring(self, agent: Any | None = None) -> None:
+        """
+        Stop monitoring mode.
+
+        Clears the monitoring flag and transitions to IDLE.
+
+        Args:
+            agent: Optional agent reference for callbacks
+        """
+        agent = agent or self._agent_ref
+        self._is_monitoring = False
+        self.force_transition(AgentState.IDLE.value, agent)
+
+    # ==========================================================================
+    # STATUS
+    # ==========================================================================
+
+    def get_status(self, life_manager: Any | None = None) -> dict[str, Any]:
+        """
+        Get a summary of the state machine's current status.
+
+        Args:
+            life_manager: Optional lifecycle manager for resource info
+
+        Returns:
+            dict: Status information including state, monitoring, and history
+        """
+        status = {
+            "current_state": self.current_state,
+            "previous_state": self.previous_state,
+            "is_monitoring": self._is_monitoring,
+            "available_transitions": [
+                {"trigger": t.trigger, "target": t.target}
+                for t in self.get_available_transitions()
+            ],
+            "registered_states": list(self.states.keys()),
+            "history_length": len(self.state_history)
+        }
+
+        # Add lifecycle info if provided
+        if life_manager is not None:
+            status["guardrails"] = life_manager.check_guardrails()
+            status["token_usage"] = life_manager.get_token_usage()
+
+        return status
+

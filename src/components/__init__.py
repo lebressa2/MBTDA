@@ -15,9 +15,14 @@ from .lifecycle import LifeCycleManager
 from .logging import CompositeLogger, ConsoleLogger, FileLogger
 from .memory import InMemoryManager
 from .state import StateMachine
-from .tools import ToolManager
+from .tools import ToolManager, RACIToolManager
 from .monitoring import Watchdog
-from .workspace import WorkspaceManager, LocalWorkspaceManager
+from .workspace import WorkspaceManager, LocalWorkspaceManager, LayeredWorkspaceManager, WorkspaceLayer
+try:
+    from .knowledge import ChromaKnowledgeBase
+except ImportError:
+    ChromaKnowledgeBase = None
+from .interpreter import SandboxInterpreter
 
 __all__ = [
     # Context Manager
@@ -38,11 +43,20 @@ __all__ = [
     "CompositeLogger",
     # Lifecycle
     "LifeCycleManager",
-    # Workspace
-    "WorkspaceManager",
-    "LocalWorkspaceManager",
+    # Workspace (choose one)
+    "WorkspaceManager",          # Simple single-directory
+    "LocalWorkspaceManager",     # Alias
+    "LayeredWorkspaceManager",   # 3-layer (PROJECT, OFFICE, INTERPRETER)
+    "WorkspaceLayer",            # Enum for layers
     # Memory
     "InMemoryManager",
-    # Tools
-    "ToolManager",
+    # Tools (choose one)
+    "ToolManager",               # Traditional with tool schemas
+    "RACIToolManager",           # Code interpreter approach
+    # Knowledge Base
+    "ChromaKnowledgeBase",
+    # Interpreter (for RACI mode)
+    "SandboxInterpreter",
 ]
+
+
