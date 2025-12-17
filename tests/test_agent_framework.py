@@ -3,11 +3,11 @@ Agent Framework Tests - Real API Integration.
 
 Tests the Agent class with real LLM APIs (Groq/Google) to validate:
 - Synchronous mode (process_message)
-- State machine transitions
 - Context management
 - Memory management
 - Tool execution
-- Protocols
+- Workspace operations
+- Full integration
 """
 
 import sys
@@ -20,12 +20,10 @@ load_dotenv()
 
 from src.interfaces.base import ITextClient, LogLevel
 from src.agent import Agent
-from src.agents.react_agent import create_react_agent
+from src.agents.react_agent import create_simple_agent
 from src.components import (
-    ContextManager, StateMachine, ConsoleLogger,
-    InMemoryManager, ToolManager, WorkspaceManager, LocalWorkspaceManager, Watchdog
+    ConsoleLogger, InMemoryManager, ToolManager, WorkspaceManager, LocalWorkspaceManager
 )
-from src.models import Protocol, ProtocolStep, AgentState, Transition
 
 # Import real clients
 from tests.clients import get_text_client, GroqTextClient, GoogleTextClient
@@ -69,22 +67,19 @@ def test_basic_agent():
         text_client = get_text_client()
         
         # Create agent with minimal components
-        # Use create_react_agent to get the standard behavior
-        agent = create_react_agent(
+        # Use create_simple_agent to get the standard behavior
+        agent = create_simple_agent(
             text_provider=text_client,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
         )
         
-        print(f"\n📊 Initial State: {agent.get_current_state()}")
-        
+        print(f"\n🤖 Agent created successfully")
+
         # Process a simple message
         response = agent.process_message("What is 2 + 2? Answer briefly.")
-        
+
         print(f"\n💬 Response: {response}")
-        print(f"📊 Final State: {agent.get_current_state()}")
-        
-        # Verify state transition
-        assert agent.get_current_state() == AgentState.IDLE.value, "Agent should return to IDLE"
+        print("📊 Agent processed message successfully")
         
         print("\n✅ Basic Agent Test PASSED")
         return True
@@ -110,7 +105,7 @@ def test_agent_with_memory():
         text_client = get_text_client()
         memory = InMemoryManager(short_term_limit=10)
         
-        agent = create_react_agent(
+        agent = create_simple_agent(
             text_provider=text_client,
             memory=memory,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
@@ -200,7 +195,7 @@ def test_agent_with_tools():
             )
         )
         
-        agent = create_react_agent(
+        agent = create_simple_agent(
             text_provider=text_client,
             tools=tool_manager,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
@@ -257,7 +252,7 @@ def test_agent_with_workspace():
         if os.path.exists(workspace.base_path):
             shutil.rmtree(workspace.base_path)
         
-        agent = create_react_agent(
+        agent = create_simple_agent(
             text_provider=text_client,
             workspace_manager=workspace,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
@@ -297,112 +292,8 @@ def test_agent_with_workspace():
         return False
 
 
-# ==============================================================================
-# TEST 5: Agent with Protocol
-# ==============================================================================
-
-def test_agent_with_protocol():
-    """Test agent protocol functionality."""
-    print("\n" + "="*60)
-    print("🧪 TEST: Agent with Protocol")
-    print("="*60)
-    
-    try:
-        text_client = get_text_client()
-        
-        agent = create_react_agent(
-            text_provider=text_client,
-            logger=ConsoleLogger(min_level=LogLevel.INFO)
-        )
-        
-        # Create a protocol
-        analysis_protocol = Protocol(
-            protocol_name="code_review",
-            description="Protocol for reviewing code",
-            steps=[
-                ProtocolStep(
-                    name="understand",
-                    goal="Understand the code structure",
-                    instructions=["Read the code", "Identify main components"]
-                ),
-                ProtocolStep(
-                    name="analyze",
-                    goal="Analyze code quality",
-                    instructions=["Check for bugs", "Review best practices"]
-                ),
-                ProtocolStep(
-                    name="report",
-                    goal="Generate review report",
-                    instructions=["Summarize findings", "Provide recommendations"]
-                )
-            ]
-        )
-        
-        # Add protocol to agent
-        agent.add_protocol(analysis_protocol)
-        
-        # Verify protocol was added
-        retrieved = agent.get_protocol("code_review")
-        assert retrieved is not None, "Protocol should be retrievable"
-        assert retrieved.protocol_name == "code_review"
-        print(f"📋 Protocol '{retrieved.protocol_name}' added with {len(retrieved.steps)} steps")
-        
-        # Get agent status
-        status = agent.get_status()
-        print(f"📊 Agent status: {status}")
-        assert "code_review" in status["protocols"], "Protocol should be in status"
-        
-        print("\n✅ Protocol Test PASSED")
-        return True
-        
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
 
 
-# ==============================================================================
-# TEST 6: State Machine Transitions
-# ==============================================================================
-
-def test_state_machine():
-    """Test state machine transitions."""
-    print("\n" + "="*60)
-    print("🧪 TEST: State Machine Transitions")
-    print("="*60)
-    
-    try:
-        text_client = get_text_client()
-        
-        # Use create_react_agent to ensure we have transitions
-        agent = create_react_agent(
-            text_provider=text_client,
-            logger=ConsoleLogger(min_level=LogLevel.DEBUG)
-        )
-        
-        print(f"📊 Initial state: {agent.get_current_state()}")
-        assert agent.get_current_state() == AgentState.IDLE.value
-        
-        # Track state changes during message processing
-        states_visited = [agent.get_current_state()]
-        
-        # Process message (will trigger state transitions)
-        response = agent.process_message("Hello!")
-        
-        # After processing, should be back to IDLE
-        final_state = agent.get_current_state()
-        print(f"📊 Final state: {final_state}")
-        assert final_state == AgentState.IDLE.value, f"Expected IDLE, got {final_state}"
-        
-        print("\n✅ State Machine Test PASSED")
-        return True
-        
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
 
 
 # ==============================================================================
@@ -446,7 +337,7 @@ def test_full_integration():
         )
         
         # Create fully configured agent
-        agent = create_react_agent(
+        agent = create_simple_agent(
             text_provider=text_client,
             memory=memory,
             tools=tool_manager,
@@ -464,7 +355,6 @@ def test_full_integration():
         print(f"\n💬 Response: {str(response)[:200]}...")
         
         # Verify all components worked
-        assert agent.get_current_state() == AgentState.IDLE.value
         assert len(memory.get_recent_messages()) >= 2  # User + Assistant messages
         
         # Cleanup - COMMENTED OUT to allow user inspection
@@ -481,77 +371,6 @@ def test_full_integration():
         return False
 
 
-# ==============================================================================
-# TEST 8: Advanced State Machine
-# ==============================================================================
-
-def test_advanced_state_machine():
-    """Test advanced state machine features (callbacks, conditions, dynamic states)."""
-    print("\n" + "="*60)
-    print("🧪 TEST: Advanced State Machine")
-    print("="*60)
-    
-    try:
-        text_client = get_text_client()
-        agent = Agent(
-            text_provider=text_client,
-            logger=ConsoleLogger(min_level=LogLevel.DEBUG)
-        )
-        
-        # Track callbacks
-        callbacks = {"on_enter": False, "on_exit": False, "condition_checked": False}
-        
-        # 1. Register a custom state
-        agent.state_machine.register_state(
-            name="CUSTOM_STATE",
-            instruction="Custom state instruction",
-            on_enter=lambda ag: callbacks.update({"on_enter": True}),
-            on_exit=lambda ag: callbacks.update({"on_exit": True})
-        )
-        
-        # 2. Add transition with condition
-        from src.models.data_models import Transition
-        
-        def check_condition(ag):
-            callbacks["condition_checked"] = True
-            return True
-            
-        agent.state_machine.add_transition(Transition(
-            source=AgentState.IDLE.value,
-            target="CUSTOM_STATE",
-            trigger="custom_trigger",
-            condition=check_condition
-        ))
-        
-        # 3. Trigger transition
-        print("🔄 Triggering transition to CUSTOM_STATE...")
-        success = agent.state_machine.trigger("custom_trigger", agent)
-        
-        print(f"📊 Transition success: {success}")
-        print(f"📊 Current State: {agent.get_current_state()}")
-        print(f"📊 Callbacks: {callbacks}")
-        
-        # Verify
-        assert success, "Transition should succeed"
-        assert agent.get_current_state() == "CUSTOM_STATE", "Should be in CUSTOM_STATE"
-        assert callbacks["condition_checked"], "Condition should be checked"
-        assert callbacks["on_enter"], "on_enter should be called"
-        
-        # 4. Transition back (trigger exit callback)
-        print("🔄 Forcing transition back to IDLE...")
-        agent.state_machine.force_transition(AgentState.IDLE.value, agent)
-        
-        print(f"📊 Callbacks after exit: {callbacks}")
-        assert callbacks["on_exit"], "on_exit should be called"
-        
-        print("\n✅ Advanced State Machine Test PASSED")
-        return True
-        
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
 
 
 # ==============================================================================
@@ -575,8 +394,6 @@ def run_all_tests():
         ("Agent with Memory", test_agent_with_memory),
         ("Agent with Tools", test_agent_with_tools),
         ("Agent with Workspace", test_agent_with_workspace),
-        ("Agent with Protocol", test_agent_with_protocol),
-        ("State Machine", test_state_machine),
         ("Full Integration", test_full_integration),
     ]
     
@@ -616,8 +433,6 @@ if __name__ == "__main__":
     parser.add_argument("--memory", action="store_true", help="Run only memory test")
     parser.add_argument("--tools", action="store_true", help="Run only tools test")
     parser.add_argument("--workspace", action="store_true", help="Run only workspace test")
-    parser.add_argument("--protocol", action="store_true", help="Run only protocol test")
-    parser.add_argument("--state", action="store_true", help="Run only state machine test")
     parser.add_argument("--full", action="store_true", help="Run only full integration test")
     
     args = parser.parse_args()
@@ -630,10 +445,6 @@ if __name__ == "__main__":
         test_agent_with_tools()
     elif args.workspace:
         test_agent_with_workspace()
-    elif args.protocol:
-        test_agent_with_protocol()
-    elif args.state:
-        test_state_machine()
     elif args.full:
         test_full_integration()
     else:

@@ -14,7 +14,6 @@ from .context import (
 from .lifecycle import LifeCycleManager
 from .logging import CompositeLogger, ConsoleLogger, FileLogger
 from .memory import InMemoryManager
-from .state import StateMachine
 from .tools import ToolManager, RACIToolManager
 from .monitoring import Watchdog
 from .workspace import WorkspaceManager, LocalWorkspaceManager, LayeredWorkspaceManager, WorkspaceLayer
@@ -33,8 +32,6 @@ __all__ = [
     "SystemPromptTemplate",
     "SYSTEM_PROMPT_TEMPLATES",
     "TemplateRegistry",
-    # State Machine
-    "StateMachine",
     # Watchdog
     "Watchdog",
     # Loggers

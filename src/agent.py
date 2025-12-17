@@ -6,7 +6,7 @@ Supports both Synchronous (Request/Response) and Reactive (Monitoring/Event-Driv
 
 from typing import Any
 
-from .components import ContextManager, StateMachine
+from .components import ContextManager
 from .interfaces.base import (
     IInboxClient,
     ILifeCycle,
@@ -19,7 +19,6 @@ from .interfaces.base import (
     IWatchdog,
     IWorkspaceManager,
 )
-from .models.data_models import Protocol
 
 
 class Agent:
@@ -30,8 +29,7 @@ class Agent:
     intelligent behavior through LLM-powered reasoning and tool execution.
 
     Responsibilities are delegated to specialized components:
-    - ContextManager: System prompt building, protocol management, context contributions
-    - StateMachine: State transitions, monitoring mode control, status reporting
+    - ContextManager: System prompt building, context contributions
     - Runner: Execution logic for synchronous and reactive modes
     - Memory/Tools/Workspace: Data management and operations
 
@@ -40,7 +38,6 @@ class Agent:
         context: ContextManager for system prompt management
         memory: Memory manager for conversation history
         tools: Tool manager for available actions
-        state_machine: State machine for operation flow control
         runner: Execution strategy (sync/async)
         watchdog: Timer and polling control for reactive mode
         logger: Logging interface
@@ -54,7 +51,6 @@ class Agent:
         context: ContextManager | None = None,
         memory: IMemoryManager | None = None,
         tools: IToolManager | None = None,
-        state_machine: StateMachine | None = None,
         watchdog: IWatchdog | None = None,
         logger: ILogger | None = None,
         life_manager: ILifeCycle | None = None,
@@ -71,7 +67,6 @@ class Agent:
             context: Optional ContextManager (creates default if None)
             memory: Optional memory manager
             tools: Optional tool manager
-            state_machine: Optional state machine (creates default if None)
             watchdog: Optional watchdog for reactive mode
             logger: Optional logger
             life_manager: Optional lifecycle manager
@@ -84,7 +79,6 @@ class Agent:
         self.context = context or ContextManager()
         self.memory = memory
         self.tools = tools
-        self.state_machine = state_machine or StateMachine()
         self.watchdog = watchdog
         self.logger = logger
         self.life_manager = life_manager
@@ -98,15 +92,12 @@ class Agent:
         # Register components for automatic context contribution
         self.context.discover_components(self)
 
-        # Set agent reference in state machine
-        self.state_machine.set_agent_reference(self)
-
         # Set agent reference in runner
         if self.runner:
             self.runner.set_agent_reference(self)
 
     # ==========================================================================
-    # MESSAGE HANDLING (Thin interface - delegates to StateMachine)
+    # MESSAGE HANDLING
     # ==========================================================================
 
 
@@ -138,36 +129,14 @@ class Agent:
         Returns:
             str: The formatted system prompt
         """
-        return self.context.build_system_prompt(self.state_machine)
+        return self.context.build_system_prompt()
 
 
 
 
 
 
-    # ==========================================================================
-    # PROTOCOL MANAGEMENT (delegated to ContextManager)
-    # ==========================================================================
 
-    def add_protocol(self, protocol: Protocol) -> None:
-        """Add a protocol to the agent (delegated to ContextManager)."""
-        self.context.add_protocol(protocol)
-
-    def get_protocol(self, name: str) -> Protocol | None:
-        """Get a protocol by name (delegated to ContextManager)."""
-        return self.context.get_protocol(name)
-
-    # ==========================================================================
-    # UTILITY METHODS (delegated to StateMachine)
-    # ==========================================================================
-
-    def get_current_state(self) -> str:
-        """Get the current agent state (delegated to StateMachine)."""
-        return self.state_machine.current_state
-
-    def is_monitoring(self) -> bool:
-        """Check if agent is in monitoring mode (delegated to StateMachine)."""
-        return self.state_machine.is_monitoring()
 
     def run_with(self, runner: IRunner) -> None:
         """Execute agent with specified runner strategy.
@@ -198,9 +167,48 @@ class Agent:
         runner.set_agent_reference(self)
         return runner.start()
 
+    def process_event(self, event: Any) -> None:
+        """Process an event (for reactive mode).
+
+        Args:
+            event: Event to process (AgentEvent or similar)
+        """
+        # Convert event to message and process
+        if hasattr(event, 'data') and isinstance(event.data, dict):
+            message = event.data.get('message', str(event))
+        else:
+            message = str(event)
+
+        if self.logger:
+            self.logger.info(f"Processing event: {message[:50]}...")
+
+        # Use sync runner to process the event as a message
+        from .runners.sync_runner import SyncRunner
+        runner = SyncRunner(message)
+        runner.set_agent_reference(self)
+        response = runner.start()
+
+        if self.logger:
+            self.logger.info(f"Event processed: {response[:50]}...")
+
     def get_status(self) -> dict[str, Any]:
-        """Get a summary of the agent's current status (delegated to StateMachine)."""
-        status = self.state_machine.get_status(self.life_manager)
-        # Add protocol info from context
-        status["protocols"] = list(self.context.protocols.keys())
+        """Get a summary of the agent's current status."""
+        status = {
+            "components": {
+                "text_provider": self.text_provider is not None,
+                "context": self.context is not None,
+                "memory": self.memory is not None,
+                "tools": self.tools is not None,
+                "runner": self.runner is not None,
+                "watchdog": self.watchdog is not None,
+                "logger": self.logger is not None,
+                "life_manager": self.life_manager is not None,
+                "workspace_manager": self.workspace_manager is not None,
+                "inbox_client": self.inbox_client is not None,
+                "task_client": self.task_client is not None,
+            }
+        }
+        if self.life_manager:
+            status["guardrails"] = self.life_manager.check_guardrails()
+            status["token_usage"] = self.life_manager.get_token_usage()
         return status

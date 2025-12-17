@@ -10,10 +10,7 @@ class SyncRunner(IRunner):
     Use for request/response interactions, chatbots, or API endpoints.
     Processes one message and returns the response immediately.
 
-    Recebe uma string de mensagem, adiciona ao memory (se existir),
-    chama state_machine.trigger("message", self.agent),
-    aguarda o loop ReAct terminar (até IDLE),
-    retorna a última resposta do memory ou "No response".
+    Performs a single LLM call with tool support.
 
     Example:
         agent = Agent(text_provider=llm_client)
@@ -39,23 +36,60 @@ class SyncRunner(IRunner):
         if self.agent.memory:
             self.agent.memory.add_message("user", self.message)
 
-        # Trigger the message event
-        self.agent.state_machine.trigger("message", self.agent)
+        # Prepare messages
+        system_prompt = self.agent.build_system_prompt()
+        messages = [{"role": "system", "content": system_prompt}]
 
-        # Wait for the ReAct loop to complete (until IDLE)
-        while not self.agent.state_machine.current_state == "IDLE":
-            pass  # Wait for completion
-
-        # Return the last message from memory as the response
         if self.agent.memory:
-            messages = self.agent.memory.get_recent_messages()
-            if messages:
-                last_msg = messages[-1]
-                if isinstance(last_msg, dict):
-                    return last_msg.get("content") or "No response"
-                return getattr(last_msg, 'content', "No response") or "No response"
+            mem_msgs = self.agent.memory.get_recent_messages()
+            # Sanitize messages
+            clean_msgs = []
+            for m in mem_msgs:
+                if isinstance(m, dict):
+                    clean_m = {
+                        k: v for k, v in m.items()
+                        if k in ['role', 'content', 'tool_calls', 'tool_call_id', 'name']
+                    }
+                    clean_msgs.append(clean_m)
+                else:
+                    clean_msgs.append(m)
+            messages.extend(clean_msgs)
 
-        return "No response"
+        # Invoke LLM
+        try:
+            response = self.agent.invoke_llm(messages)
+
+            # Store response
+            if self.agent.memory:
+                self.agent.memory.add_message("assistant", response.content)
+
+            # Check for tool calls
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                if self.agent.logger:
+                    self.agent.logger.info(f"🛠️ Tool calls detected: {len(response.tool_calls)}")
+
+                # Execute tools
+                if self.agent.tools:
+                    results = self.agent.tools.execute_tool_calls(response.tool_calls)
+
+                    # Add results to memory
+                    for result in results:
+                        if self.agent.memory:
+                            self.agent.memory.add_message("tool", result["content"], tool_call_id=result["tool_call_id"])
+
+                    # For single-turn, we return the tool results as the response
+                    tool_outputs = [r["content"] for r in results]
+                    return "\n".join(tool_outputs) if tool_outputs else "Tools executed successfully"
+                else:
+                    return response.content or "No response"
+            else:
+                # Return the direct response
+                return response.content or "No response"
+
+        except Exception as e:
+            if self.agent.logger:
+                self.agent.logger.error(f"Error in processing: {e}")
+            return f"Error: {e}"
 
     def stop(self) -> None:
         # For sync, nothing to stop

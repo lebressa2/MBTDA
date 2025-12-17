@@ -35,10 +35,11 @@ class ReactiveRunner(IRunner):
 
     def start(self) -> None:
         self._running = True
-        self.agent.state_machine.start_monitoring(self.agent)
+        if self.agent.logger:
+            self.agent.logger.info("Starting reactive monitoring...")
 
         try:
-            while self._running and self.agent.state_machine.is_monitoring():
+            while self._running:
                 events_detected = []
 
                 # Check inbox
@@ -66,17 +67,14 @@ class ReactiveRunner(IRunner):
                     self.agent.process_event(event)
 
                 # Wait for next poll
-                if self._running and self.agent.state_machine.is_monitoring():
+                if self._running:
                     time.sleep(self._poll_interval)
 
         except KeyboardInterrupt:
             if self.agent.logger:
                 self.agent.logger.info("Monitoring stopped by user")
-        finally:
-            self.agent.state_machine.stop_monitoring(self.agent)
 
     def stop(self) -> None:
         self._running = False
-        self.agent.state_machine.stop_monitoring(self.agent)
         if self.agent.logger:
             self.agent.logger.info("Monitoring stopped")

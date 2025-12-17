@@ -3,6 +3,8 @@ from .manager import (
     DictToXMLFormatter,
     MarkdownFormatter,
     MetaData,
+)
+from .templates import (
     SystemPromptTemplate,
     SYSTEM_PROMPT_TEMPLATES,
     TemplateRegistry,
