@@ -12,13 +12,12 @@ from ...interfaces.base import IMemoryManager
 class InMemoryManager(IMemoryManager):
     """In-memory implementation of memory management."""
 
-    # Flag to enable/disable automatic context injection (default: True)
-    inject_context: bool = True
+
 
     def __init__(self, short_term_limit: int = 50, inject_context: bool = True):
         self._short_term: deque = deque(maxlen=short_term_limit)
         self._long_term: dict[str, Any] = {}
-        self.inject_context = inject_context
+        self.should_contribute = inject_context
 
     def add_message(self, role: str, content: str, metadata: dict | None = None) -> None:
         self._short_term.append({

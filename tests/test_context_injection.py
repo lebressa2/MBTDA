@@ -29,9 +29,8 @@ from src.components import ContextManager
 from src.components import InMemoryManager
 from src.components import ToolManager
 from src.components import WorkspaceManager
-from src.components import StateMachine
 from src.interfaces.base import IContextProvider
-from src.models.data_models import AgentState
+
 
 
 # =============================================================================
@@ -317,22 +316,17 @@ def test_agent_with_full_context_injection() -> bool:
             workspace_manager=workspace
         )
         print(f"     ✓ Agent created with all components")
-        print(f"     ✓ Initial state: {agent.state_machine.current_state}")
         
         print_test_step(5, "First interaction - asking about available tools")
         
-        response1 = agent.process_message(
+        response1 = agent.chat(
             "What tools do you have available? List them briefly."
         )
         print(f"     ✓ Response: {str(response1)[:150]}...")
         
-        # Verify state returned to IDLE
-        assert agent.state_machine.current_state == AgentState.IDLE.value
-        print(f"     ✓ State returned to IDLE")
-        
         print_test_step(6, "Second interaction - asking about workspace")
         
-        response2 = agent.process_message(
+        response2 = agent.chat(
             "What files are in my workspace?"
         )
         print(f"     ✓ Response: {str(response2)[:150]}...")
@@ -349,7 +343,7 @@ def test_agent_with_full_context_injection() -> bool:
         print_test_step(8, "Verifying context was injected in system prompt")
         
         # Build system prompt to see what was injected
-        system_prompt = agent._build_system_prompt()
+        system_prompt = agent.build_system_prompt()
         
         # Check if tools were injected
         assert "add_numbers" in system_prompt or "save_note" in system_prompt
@@ -376,123 +370,7 @@ def test_agent_with_full_context_injection() -> bool:
         return False
 
 
-def test_state_transitions_with_context() -> bool:
-    """
-    TEST 4: State Transitions with Context Injection
-    Verify state machine transitions work correctly with context injection.
-    """
-    print_test_header(
-        4,
-        "State Transitions with Context",
-        "Verify state transitions and context injection work together"
-    )
-    
-    try:
-        print_test_step(1, "Creating agent with all components")
-        
-        text_client = get_text_client()
-        memory = InMemoryManager()
-        tools = ToolManager()
-        temp_dir = tempfile.mkdtemp()
-        workspace = WorkspaceManager(temp_dir)
-        state_machine = StateMachine()
-        context = ContextManager()
-        
-        # Track state changes
-        state_history = []
-        
-        def on_state_change(agent, old_state, new_state):
-            state_history.append({"from": old_state, "to": new_state})
-            print(f"       → State: {old_state} → {new_state}")
-        
-        # Register a callback for state changes
-        from src.models.data_models import Transition
-        
-        print(f"     ✓ All components created")
-        
-        print_test_step(2, "Registering tools")
-        
-        @tool
-        def get_time() -> str:
-            """Get the current time."""
-            return datetime.now().strftime("%H:%M:%S")
-        
-        @tool
-        def multiply(a: int, b: int) -> int:
-            """Multiply two numbers."""
-            return a * b
-        
-        tools.register_tool("utils", get_time)
-        tools.register_tool("math", multiply)
-        print(f"     ✓ Registered 2 tools")
-        
-        print_test_step(3, "Creating agent and verifying initial state")
-        
-        agent = Agent(
-            text_provider=text_client,
-            context=context,
-            memory=memory,
-            tools=tools,
-            workspace_manager=workspace,
-            state_machine=state_machine
-        )
-        
-        initial_state = agent.state_machine.current_state
-        print(f"     ✓ Initial state: {initial_state}")
-        assert initial_state == AgentState.IDLE.value
-        
-        print_test_step(4, "Processing first message (triggers multiple transitions)")
-        
-        print(f"       Starting state: {agent.state_machine.current_state}")
-        
-        response1 = agent.process_message("What time is it?")
-        
-        print(f"       Final state: {agent.state_machine.current_state}")
-        print(f"     ✓ Response: {str(response1)[:100]}...")
-        
-        # Verify we ended in IDLE
-        assert agent.state_machine.current_state == AgentState.IDLE.value
-        print(f"     ✓ Returned to IDLE state")
-        
-        print_test_step(5, "Processing second message with memory context")
-        
-        response2 = agent.process_message("Now multiply 7 by 8")
-        
-        print(f"     ✓ Response: {str(response2)[:100]}...")
-        
-        # Verify memory has both interactions
-        messages = memory.get_recent_messages(10)
-        assert len(messages) >= 4
-        print(f"     ✓ Memory has {len(messages)} messages from both interactions")
-        
-        print_test_step(6, "Verifying context injection during transitions")
-        
-        # Build fresh system prompt
-        system_prompt = agent._build_system_prompt()
-        
-        # Should contain state info
-        assert "IDLE" in system_prompt or "state" in system_prompt.lower()
-        print(f"     ✓ State context present in prompt")
-        
-        # Should contain tool info
-        assert "get_time" in system_prompt or "multiply" in system_prompt
-        print(f"     ✓ Tools context present in prompt")
-        
-        # Should contain memory
-        assert len(memory.get_recent_messages(5)) > 0
-        print(f"     ✓ Memory context contains conversation history")
-        
-        # Cleanup
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        
-        print_test_result(True, "State transitions with context injection working")
-        return True
-        
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+
 
 
 def test_workspace_file_operations_with_context() -> bool:
@@ -583,7 +461,7 @@ def test_workspace_file_operations_with_context() -> bool:
         
         print_test_step(5, "Asking agent about workspace contents")
         
-        response = agent.process_message(
+        response = agent.chat(
             "What files do I have in my workspace? Just list them."
         )
         print(f"     ✓ Response: {str(response)[:200]}...")
@@ -667,7 +545,7 @@ def test_multi_turn_conversation_with_context() -> bool:
         
         print_test_step(2, "Turn 1: Introducing myself")
         
-        r1 = agent.process_message("Hi! My name is Carlos and I'm a Python developer.")
+        r1 = agent.chat("Hi! My name is Carlos and I'm a Python developer.")
         print(f"     ✓ Response: {str(r1)[:100]}...")
         
         msgs_after_t1 = len(memory.get_recent_messages(100))
@@ -675,7 +553,7 @@ def test_multi_turn_conversation_with_context() -> bool:
         
         print_test_step(3, "Turn 2: Asking about context")
         
-        r2 = agent.process_message("What's my name?")
+        r2 = agent.chat("What's my name?")
         print(f"     ✓ Response: {str(r2)[:100]}...")
         
         msgs_after_t2 = len(memory.get_recent_messages(100))
@@ -683,7 +561,7 @@ def test_multi_turn_conversation_with_context() -> bool:
         
         print_test_step(4, "Turn 3: Testing memory accumulation")
         
-        r3 = agent.process_message("What programming language do I work with?")
+        r3 = agent.chat("What programming language do I work with?")
         print(f"     ✓ Response: {str(r3)[:100]}...")
         
         msgs_after_t3 = len(memory.get_recent_messages(100))
@@ -728,15 +606,81 @@ def test_multi_turn_conversation_with_context() -> bool:
 # TEST RUNNER
 # =============================================================================
 
+def test_stop_dynamic_contributing() -> bool:
+    """
+    TEST 6: Stop Dynamic Contributing
+    Verify stop_dynamic_contributing disables all context contributions.
+    """
+    print_test_header(
+        6,
+        "Stop Dynamic Contributing",
+        "Verify stop_dynamic_contributing disables all context contributions"
+    )
+    
+    try:
+        print_test_step(1, "Creating components and agent")
+        
+        memory = InMemoryManager()
+        tools = ToolManager()
+        temp_dir = tempfile.mkdtemp()
+        workspace = WorkspaceManager(temp_dir)
+        context = ContextManager()
+        
+        agent = Agent(
+            text_provider=get_text_client(),
+            context=context,
+            memory=memory,
+            tools=tools,
+            workspace_manager=workspace
+        )
+        
+        # Add some data
+        memory.add_message("user", "test message")
+        workspace.create_file("test.txt", "content")
+        
+        print(f"     ✓ Components created and populated")
+        
+        print_test_step(2, "Verifying initial context contribution")
+        
+        initial_context = context.get_raw_context()
+        assert "memory" in initial_context
+        assert "workspace" in initial_context
+        print(f"     ✓ Initial context contains memory and workspace")
+        
+        print_test_step(3, "Stopping dynamic contributing")
+        
+        context.stop_dynamic_contributing()
+        print(f"     ✓ stop_dynamic_contributing called")
+        
+        print_test_step(4, "Verifying context contribution is disabled")
+        
+        final_context = context.get_raw_context()
+        assert "memory" not in final_context
+        assert "workspace" not in final_context
+        print(f"     ✓ Final context does NOT contain memory and workspace")
+        
+        # Cleanup
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        print_test_result(True, "stop_dynamic_contributing working correctly")
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def run_all_tests() -> dict:
     """Run all tests and return results."""
     tests = [
         ("Context Injection Basic", test_context_injection_basic),
         ("Disabled Context Injection", test_disabled_context_injection),
         ("Agent Full Context", test_agent_with_full_context_injection),
-        ("State Transitions", test_state_transitions_with_context),
         ("Workspace Operations", test_workspace_file_operations_with_context),
         ("Multi-Turn Conversation", test_multi_turn_conversation_with_context),
+        ("Stop Dynamic Contributing", test_stop_dynamic_contributing),
     ]
     
     results = {}
@@ -781,9 +725,9 @@ def run_single_test(test_name: str) -> bool:
         "context_injection": test_context_injection_basic,
         "disabled_injection": test_disabled_context_injection,
         "full_context": test_agent_with_full_context_injection,
-        "state_transitions": test_state_transitions_with_context,
         "workspace": test_workspace_file_operations_with_context,
         "multi_turn": test_multi_turn_conversation_with_context,
+        "stop_contributing": test_stop_dynamic_contributing,
     }
     
     if test_name not in test_map:

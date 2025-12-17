@@ -5,7 +5,7 @@ Example usage and demo of the Agent Framework.
 from typing import Any, List
 from src.agent import Agent
 from src.components import (
-    ContextManager, StateMachine, Watchdog,
+    ContextManager, Watchdog,
     ConsoleLogger, LifeCycleManager, WorkspaceManager,
     InMemoryManager, ToolManager
 )
@@ -110,7 +110,7 @@ def demo_synchronous_mode():
     
     for msg in messages:
         print(f"\n[USER]: {msg}")
-        response = agent.process_message(msg)
+        response = agent.chat(msg)
         print(f"[AGENT]: {response}")
     
     # Show status
@@ -178,50 +178,7 @@ def demo_reactive_mode():
     print("\nMonitoring stopped.")
 
 
-def demo_state_machine():
-    """Demonstrate state machine transitions."""
-    print("\n" + "="*60)
-    print("DEMO: State Machine Transitions")
-    print("="*60 + "\n")
-    
-    # Create state machine
-    sm = StateMachine()
-    
-    # Register custom state
-    sm.register_state(
-        name="CUSTOM_STATE",
-        instruction="This is a custom state for special processing.",
-        required_tools=["special_tool"],
-        on_enter=lambda ag: print("  -> Entered CUSTOM_STATE"),
-        on_exit=lambda ag: print("  <- Exited CUSTOM_STATE")
-    )
-    
-    # Add custom transition
-    sm.add_transition(Transition(
-        source="IDLE",
-        target="CUSTOM_STATE",
-        trigger="custom:activate"
-    ))
-    
-    sm.add_transition(Transition(
-        source="CUSTOM_STATE",
-        target="IDLE",
-        trigger="custom:deactivate"
-    ))
-    
-    print(f"Initial State: {sm.current_state}")
-    print(f"Available States: {sm.get_all_states()}\n")
-    
-    # Demonstrate transitions
-    print("Triggering 'custom:activate'...")
-    sm.trigger("custom:activate")
-    print(f"Current State: {sm.current_state}")
-    
-    print("\nTriggering 'custom:deactivate'...")
-    sm.trigger("custom:deactivate")
-    print(f"Current State: {sm.current_state}")
-    
-    print(f"\nState History: {sm.get_history()}")
+
 
 
 def demo_context_manager():
@@ -257,7 +214,6 @@ def demo_context_manager():
 
 if __name__ == "__main__":
     demo_context_manager()
-    demo_state_machine()
     demo_synchronous_mode()
     demo_reactive_mode()
     

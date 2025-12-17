@@ -14,8 +14,7 @@ from ...interfaces.base import IWorkspaceManager
 class WorkspaceManager(IWorkspaceManager):
     """Manages the isolated workspace environment for the agent."""
 
-    # Flag to enable/disable automatic context injection (default: True)
-    inject_context: bool = True
+
 
     def __init__(self, base_path: str, inject_context: bool = True):
         self.base_path = Path(base_path).resolve()
@@ -23,7 +22,7 @@ class WorkspaceManager(IWorkspaceManager):
         self._snapshots: dict[str, dict] = {}
         self._audit_log: list[dict] = []
         self._storage_limit: int = 1024 * 1024 * 1024  # 1GB default
-        self.inject_context = inject_context
+        self.should_contribute = inject_context
 
     def _log_action(self, action: str, path: str, success: bool) -> None:
         self._audit_log.append({

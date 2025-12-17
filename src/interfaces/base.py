@@ -51,8 +51,30 @@ class IContextProvider(ABC):
                 }
     """
     
-    # Flag to enable/disable context injection (default: True)
-    inject_context: bool = True
+    # Internal flag for context injection
+    _should_contribute: bool = True
+
+    @property
+    def should_contribute(self) -> bool:
+        """
+        Flag to enable/disable automatic context injection.
+        Replaces 'inject_context'.
+        """
+        return self._should_contribute
+
+    @should_contribute.setter
+    def should_contribute(self, value: bool) -> None:
+        self._should_contribute = value
+
+    @property
+    def inject_context(self) -> bool:
+        """Deprecated: Use should_contribute instead."""
+        return self._should_contribute
+
+    @inject_context.setter
+    def inject_context(self, value: bool) -> None:
+        """Deprecated: Use should_contribute instead."""
+        self._should_contribute = value
     
     @abstractmethod
     def get_context_contribution(self) -> dict[str, Any]:
@@ -67,6 +89,8 @@ class IContextProvider(ABC):
             dict[str, Any]: Context dictionary to be merged
         """
         pass
+
+    
 
 
 # ==============================================================================

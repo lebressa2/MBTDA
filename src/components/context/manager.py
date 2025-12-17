@@ -118,136 +118,7 @@ def _deep_merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[st
     return result
 
 
-class DictToXMLFormatter(IFormatter):
-    """
-    Formats a dictionary into XML-like structured text.
-
-    This formatter converts nested dictionaries into a readable
-    XML-style format for system prompts.
-    """
-
-    def __init__(self, indent: str = "  "):
-        """
-        Initialize the formatter.
-
-        Args:
-            indent: String to use for indentation
-        """
-        self.indent = indent
-
-    def format(self, context: dict[str, Any]) -> str:
-        """
-        Format a context dictionary into XML-like string.
-
-        Args:
-            context: Dictionary containing context data
-
-        Returns:
-            str: XML-formatted string representation
-        """
-        return self._format_dict(context, level=0)
-
-    def _format_dict(self, data: dict[str, Any], level: int) -> str:
-        """Recursively format a dictionary."""
-        lines = []
-        prefix = self.indent * level
-
-        for key, value in data.items():
-            if isinstance(value, dict):
-                lines.append(f"{prefix}<{key}>")
-                lines.append(self._format_dict(value, level + 1))
-                lines.append(f"{prefix}</{key}>")
-            elif isinstance(value, list):
-                lines.append(f"{prefix}<{key}>")
-                lines.append(self._format_list(value, level + 1, key))
-                lines.append(f"{prefix}</{key}>")
-            else:
-                lines.append(f"{prefix}<{key}>{self._escape_xml(str(value))}</{key}>")
-
-        return "\n".join(lines)
-
-    def _format_list(self, data: list[Any], level: int, parent_key: str) -> str:
-        """Format a list of items."""
-        lines = []
-        prefix = self.indent * level
-        item_tag = self._get_singular(parent_key)
-
-        for item in data:
-            if isinstance(item, dict):
-                lines.append(f"{prefix}<{item_tag}>")
-                lines.append(self._format_dict(item, level + 1))
-                lines.append(f"{prefix}</{item_tag}>")
-            else:
-                lines.append(f"{prefix}<{item_tag}>{self._escape_xml(str(item))}</{item_tag}>")
-
-        return "\n".join(lines)
-
-    def _get_singular(self, plural: str) -> str:
-        """Get a singular form of a plural word (simple heuristic)."""
-        if plural.endswith("ies"):
-            return plural[:-3] + "y"
-        elif plural.endswith("s"):
-            return plural[:-1]
-        return plural + "_item"
-
-    def _escape_xml(self, text: str) -> str:
-        """Escape special XML characters."""
-        return (text
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-                .replace("'", "&apos;"))
-
-
-class MarkdownFormatter(IFormatter):
-    """
-    Formats a dictionary into Markdown structured text.
-
-    Alternative formatter for agents that prefer Markdown prompts.
-    """
-
-    def format(self, context: dict[str, Any]) -> str:
-        """
-        Format a context dictionary into Markdown string.
-
-        Args:
-            context: Dictionary containing context data
-
-        Returns:
-            str: Markdown-formatted string representation
-        """
-        return self._format_dict(context, level=1)
-
-    def _format_dict(self, data: dict[str, Any], level: int) -> str:
-        """Recursively format a dictionary."""
-        lines = []
-        header_prefix = "#" * min(level, 6)
-
-        for key, value in data.items():
-            if isinstance(value, dict):
-                lines.append(f"\n{header_prefix} {key.replace('_', ' ').title()}\n")
-                lines.append(self._format_dict(value, level + 1))
-            elif isinstance(value, list):
-                lines.append(f"\n{header_prefix} {key.replace('_', ' ').title()}\n")
-                lines.append(self._format_list(value, level + 1))
-            else:
-                lines.append(f"**{key.replace('_', ' ').title()}:** {value}")
-
-        return "\n".join(lines)
-
-    def _format_list(self, data: list[Any], level: int) -> str:
-        """Format a list of items."""
-        lines = []
-
-        for item in data:
-            if isinstance(item, dict):
-                for key, value in item.items():
-                    lines.append(f"- **{key}:** {value}")
-            else:
-                lines.append(f"- {item}")
-
-        return "\n".join(lines)
+from .formatters import DictToXMLFormatter, MarkdownFormatter
 
 
 class ContextManager:
@@ -660,7 +531,7 @@ class ContextManager:
         """
         Register a component for automatic context contribution.
 
-        If the component implements IContextProvider and has inject_context=True,
+        If the component implements IContextProvider and has should_contribute=True,
         it will be automatically included in context building during
         _build_full_context().
 
@@ -787,13 +658,13 @@ class ContextManager:
             # IContextProvider already imported at module level
             if isinstance(component, IContextProvider):
                 # Check if context injection is enabled
-                if getattr(component, 'inject_context', True):
+                if component.should_contribute:
                     try:
                         contribution = component.get_context_contribution()
                         if contribution:
                             # Merge each key from the contribution
                             for key, value in contribution.items():
-                                self.add(key, value)
+                                full_context[key] = value
                     except Exception as e:
                         # Log error but don't break context building
                         import logging
@@ -863,6 +734,18 @@ class ContextManager:
         """
         # Generate the formatted system message
         return self.populate_system_message()
+
+    # ==========================================================================
+    # DYNAMIC CONTEXT CONTROL
+    # ==========================================================================
+
+    def stop_dynamic_contributing(self) -> None:
+        """
+        Disable context contribution for all registered components.
+        """
+        for component in self._registered_components.values():
+            if isinstance(component, IContextProvider):
+                component.should_contribute = False
 
     # ==========================================================================
     # STATE SNAPSHOT

@@ -1,8 +1,10 @@
 from .manager import (
     ContextManager,
+    MetaData,
+)
+from .formatters import (
     DictToXMLFormatter,
     MarkdownFormatter,
-    MetaData,
 )
 from .templates import (
     SystemPromptTemplate,

@@ -10,13 +10,12 @@ from ...interfaces.base import IToolManager
 class ToolManager(IToolManager):
     """Manages tool registration and execution."""
 
-    # Flag to enable/disable automatic context injection (default: True)
-    inject_context: bool = True
+
 
     def __init__(self, inject_context: bool = True):
         self._tools: dict[str, dict[str, Any]] = {}  # tool_name -> {tool, context, description}
         self._contexts: dict[str, list[str]] = {}  # context -> [tool_names]
-        self.inject_context = inject_context
+        self.should_contribute = inject_context
 
     def register_tool(self, context: str, tool: Any) -> None:
         tool_name = getattr(tool, 'name', str(tool))
@@ -63,6 +62,52 @@ class ToolManager(IToolManager):
         elif callable(tool):
             return tool(**kwargs)
         raise ValueError(f"Tool '{tool_name}' is not callable")
+
+    def execute_tool_calls(self, tool_calls: list[dict]) -> list[dict]:
+        """
+        Execute a list of tool calls.
+
+        Args:
+            tool_calls: List of tool call dictionaries from LLM
+
+        Returns:
+            List of tool result messages
+        """
+        results = []
+        for call in tool_calls:
+            try:
+                # Extract details based on format (LangChain vs OpenAI)
+                if hasattr(call, 'get'):
+                    name = call.get('name')
+                    args = call.get('args', {})
+                    call_id = call.get('id')
+                else:
+                    # Object access
+                    name = getattr(call, 'name', None)
+                    args = getattr(call, 'args', {})
+                    call_id = getattr(call, 'id', None)
+
+                if not name:
+                    continue
+
+                # Execute
+                output = self.execute_tool(name, **args)
+
+                # Format result
+                results.append({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": str(output)
+                })
+            except Exception as e:
+                results.append({
+                    "role": "tool",
+                    "tool_call_id": call.get('id') if hasattr(call, 'get') else getattr(call, 'id', None),
+                    "name": name if 'name' in locals() else "unknown",
+                    "content": f"Error: {str(e)}"
+                })
+        return results
 
     def get_context_contribution(self) -> dict[str, Any]:
         """
