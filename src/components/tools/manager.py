@@ -4,7 +4,7 @@ Tool Manager for the Agent Framework.
 
 from typing import Any
 
-from ...interfaces.base import IToolManager
+from src.interfaces.tools import IToolManager
 
 
 class ToolManager(IToolManager):
@@ -12,10 +12,9 @@ class ToolManager(IToolManager):
 
 
 
-    def __init__(self, inject_context: bool = True):
+    def __init__(self):
         self._tools: dict[str, dict[str, Any]] = {}  # tool_name -> {tool, context, description}
         self._contexts: dict[str, list[str]] = {}  # context -> [tool_names]
-        self.should_contribute = inject_context
 
     def register_tool(self, context: str, tool: Any) -> None:
         tool_name = getattr(tool, 'name', str(tool))
@@ -109,17 +108,11 @@ class ToolManager(IToolManager):
                 })
         return results
 
-    def get_context_contribution(self) -> dict[str, Any]:
-        """
-        Get tools context for injection into the agent's system prompt.
-        
-        Returns:
-            dict with 'available_tools' key containing tool descriptions
-        """
-        if not self._tools:
-            return {}
-        
-        return {
-            "available_tools": self.get_tool_descriptions()
-        }
+    def get_snapshot(self) -> dict[str, Any]:
+        """Get a snapshot of available tools for context injection."""
+        descriptions = {}
+        for name, info in self._tools.items():
+            descriptions[name] = info["description"]
+        return descriptions
+
 

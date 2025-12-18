@@ -17,11 +17,12 @@ from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 from typing import Any
 
-from ...interfaces.raci import ExecutionResult, ModuleInfo
-from ...interfaces.base import IWorkspaceManager, IContextProvider
+from abc import ABC, abstractmethod
+from src.interfaces.raci import ExecutionResult, ModuleInfo
+from src.interfaces.workspace import IWorkspaceManager
 
 
-class SandboxInterpreter(IContextProvider):
+class SandboxInterpreter(ABC):
     """
     Sandbox Python interpreter with pre-configured modules.
     
@@ -51,15 +52,11 @@ class SandboxInterpreter(IContextProvider):
         ''')
     """
     
-    # Flag for automatic context injection
-    inject_context: bool = True
-    
     def __init__(
         self,
         workspace: IWorkspaceManager,
         timeout_default: float = 30.0,
-        allowed_imports: list[str] | None = None,
-        inject_context: bool = True
+        allowed_imports: list[str] | None = None
     ):
         """
         Initialize the sandbox interpreter.
@@ -68,12 +65,10 @@ class SandboxInterpreter(IContextProvider):
             workspace: Any IWorkspaceManager implementation
             timeout_default: Default execution timeout in seconds
             allowed_imports: List of allowed import names (None = all allowed)
-            inject_context: Whether to contribute context to system prompt
         """
         self._workspace = workspace
         self._timeout_default = timeout_default
         self._allowed_imports = allowed_imports
-        self.inject_context = inject_context
         
         # Persistent namespace for the session
         self._namespace: dict[str, Any] = {}
@@ -612,8 +607,8 @@ class SandboxInterpreter(IContextProvider):
         """Reset the interpreter state (clear variables)."""
         self._namespace.clear()
     
-    def get_context_contribution(self) -> dict[str, Any]:
-        """Get context contribution for the agent's system prompt."""
+    def get_snapshot(self) -> dict[str, Any]:
+        """Get a snapshot of the current interpreter state for context injection."""
         # Get module documentation
         modules_doc = {}
         for mod in self._builtin_modules:
@@ -622,14 +617,12 @@ class SandboxInterpreter(IContextProvider):
             modules_doc[mod.name] = f"{mod.description}. Functions: {funcs}"
         
         return {
-            "interpreter": {
-                "status": "ready",
-                "instruction": (
-                    "Use execute_code tool to run Python code. "
-                    "Import modules directly (from weather import get). "
-                    "Always use print() to show results."
-                ),
-                "modules": modules_doc,
-                "custom_modules": list(self._custom_modules.keys()),
-            }
+            "status": "ready",
+            "instruction": (
+                "Use execute_code tool to run Python code. "
+                "Import modules directly (from weather import get). "
+                "Always use print() to show results."
+            ),
+            "modules": modules_doc,
+            "custom_modules": list(self._custom_modules.keys()),
         }

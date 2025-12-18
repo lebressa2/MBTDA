@@ -19,7 +19,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from ...interfaces.base import IWorkspaceManager
+from src.interfaces.workspace import IWorkspaceManager
 
 
 class SecurityError(Exception):
@@ -77,15 +77,11 @@ class LayeredWorkspaceManager(IWorkspaceManager):
         workspace.create_file("temp.py", "x = 1", layer=WorkspaceLayer.INTERPRETER)
     """
     
-    # Flag for automatic context injection
-    inject_context: bool = True
-    
     def __init__(
         self,
         base_path: str,
         agent_id: str = "default",
-        office_base: str | Path | None = None,
-        inject_context: bool = True
+        office_base: str | Path | None = None
     ):
         """
         Initialize the layered workspace.
@@ -94,7 +90,6 @@ class LayeredWorkspaceManager(IWorkspaceManager):
             base_path: Root of the PROJECT layer (user's project)
             agent_id: Unique identifier for the agent (for office isolation)
             office_base: Base directory for OFFICE layer (default: ~/.agent/office)
-            inject_context: Whether to contribute context to system prompt
         """
         # Layer 1: PROJECT
         self._project_root = Path(base_path).resolve()
@@ -112,7 +107,6 @@ class LayeredWorkspaceManager(IWorkspaceManager):
         self._interpreter_root = Path(self._temp_dir.name)
         
         self._agent_id = agent_id
-        self.inject_context = inject_context
         
         # Audit log and storage
         self._audit_log: list[dict] = []
@@ -491,12 +485,8 @@ class LayeredWorkspaceManager(IWorkspaceManager):
     # CONTEXT CONTRIBUTION
     # ==========================================================================
     
-    def get_context_contribution(self) -> dict[str, Any]:
-        """
-        Get workspace context for injection into the agent's system prompt.
-        
-        Returns information about all three layers.
-        """
+    def get_snapshot(self) -> dict[str, Any]:
+        """Get a snapshot of the current workspace state for context injection."""
         try:
             project_files = self.list_directory(".", WorkspaceLayer.PROJECT)[:20]
         except Exception:
@@ -508,20 +498,18 @@ class LayeredWorkspaceManager(IWorkspaceManager):
             office_files = []
         
         return {
-            "workspace": {
-                "type": "layered",
-                "project": {
-                    "base_path": str(self._project_root),
-                    "files": project_files,
-                },
-                "office": {
-                    "base_path": str(self._office_root),
-                    "files": office_files,
-                },
-                "interpreter": {
-                    "base_path": str(self._interpreter_root),
-                    "status": "ready"
-                },
-                "storage": self.get_storage_usage()
-            }
+            "type": "layered",
+            "project": {
+                "base_path": str(self._project_root),
+                "files": project_files,
+            },
+            "office": {
+                "base_path": str(self._office_root),
+                "files": office_files,
+            },
+            "interpreter": {
+                "base_path": str(self._interpreter_root),
+                "status": "ready"
+            },
+            "storage": self.get_storage_usage()
         }

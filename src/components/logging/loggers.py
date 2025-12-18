@@ -5,7 +5,7 @@ Logger Component for the Agent Framework.
 from datetime import datetime
 from typing import Any
 
-from ...interfaces.base import ILogger, LogLevel
+from src.interfaces.logging import ILogger, LogLevel
 
 
 class ConsoleLogger(ILogger):

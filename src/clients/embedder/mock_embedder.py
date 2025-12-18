@@ -15,7 +15,7 @@ import hashlib
 import struct
 from typing import List
 
-from ...interfaces.base import IEmbedderProvider
+from ...interfaces.knowledge import IEmbedderProvider
 
 
 class MockEmbedderProvider(IEmbedderProvider):

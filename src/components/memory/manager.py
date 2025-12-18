@@ -6,7 +6,7 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
-from ...interfaces.base import IMemoryManager
+from src.interfaces.memory import IMemoryManager
 
 
 class InMemoryManager(IMemoryManager):
@@ -14,10 +14,9 @@ class InMemoryManager(IMemoryManager):
 
 
 
-    def __init__(self, short_term_limit: int = 50, inject_context: bool = True):
+    def __init__(self, short_term_limit: int = 50):
         self._short_term: deque = deque(maxlen=short_term_limit)
         self._long_term: dict[str, Any] = {}
-        self.should_contribute = inject_context
 
     def add_message(self, role: str, content: str, metadata: dict | None = None) -> None:
         self._short_term.append({
@@ -49,17 +48,10 @@ class InMemoryManager(IMemoryManager):
     def clear_short_term(self) -> None:
         self._short_term.clear()
 
-    def get_context_contribution(self) -> dict[str, Any]:
-        """
-        Get memory context for injection into the agent's system prompt.
-        
-        Returns:
-            dict with 'memory' key containing recent messages and long-term keys
-        """
+    def get_snapshot(self) -> dict[str, Any]:
+        """Get a snapshot of the current memory state for context injection."""
         return {
-            "memory": {
-                "recent_messages": self.get_recent_messages(5),
-                "long_term_keys": list(self._long_term.keys())[:10]
-            }
+            "recent_messages": self.get_recent_messages(5),
+            "long_term_keys": list(self._long_term.keys())[:10]
         }
 

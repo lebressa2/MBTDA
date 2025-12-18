@@ -11,7 +11,7 @@ which implementation to use when configuring the agent.
 
 from typing import Any
 
-from ...interfaces.base import IToolManager
+from src.interfaces.tools import IToolManager
 
 
 class RACIToolManager(IToolManager):
@@ -46,15 +46,11 @@ class RACIToolManager(IToolManager):
         )
     """
     
-    # Flag for automatic context injection
-    inject_context: bool = True
-    
     def __init__(
         self,
         interpreter: Any,  # SandboxInterpreter - Any to avoid circular import
         workspace: Any,  # IWorkspaceManager - Any to avoid circular import
-        max_code_length: int = 10000,
-        inject_context: bool = True
+        max_code_length: int = 10000
     ):
         """
         Initialize the RACI tool manager.
@@ -63,12 +59,10 @@ class RACIToolManager(IToolManager):
             interpreter: SandboxInterpreter instance for code execution
             workspace: IWorkspaceManager instance for file operations
             max_code_length: Maximum allowed code length
-            inject_context: Whether to contribute context to system prompt
         """
         self._interpreter = interpreter
         self._workspace = workspace
         self._max_code_length = max_code_length
-        self.inject_context = inject_context
         
         # Internal tool registry (for compatibility)
         self._tools: dict[str, dict[str, Any]] = {}
@@ -348,12 +342,8 @@ class RACIToolManager(IToolManager):
     # CONTEXT CONTRIBUTION
     # ==========================================================================
     
-    def get_context_contribution(self) -> dict[str, Any]:
-        """
-        Get tools context for injection into the agent's system prompt.
-        
-        Returns RACI-specific context with module documentation.
-        """
+    def get_snapshot(self) -> dict[str, Any]:
+        """Get a snapshot of the current tool state for context injection."""
         context = {
             "available_tools": self.get_tool_descriptions(),
             "tool_mode": "raci_interpreter",
@@ -361,9 +351,8 @@ class RACIToolManager(IToolManager):
         }
         
         # Add interpreter context if available
-        if hasattr(self._interpreter, 'get_context_contribution'):
-            interpreter_context = self._interpreter.get_context_contribution()
-            context["interpreter"] = interpreter_context.get("interpreter", {})
+        if hasattr(self._interpreter, 'get_snapshot'):
+            context["interpreter"] = self._interpreter.get_snapshot()
         
         return context
     

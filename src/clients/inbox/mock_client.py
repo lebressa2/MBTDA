@@ -5,7 +5,7 @@ Mock Inbox Client for testing and development.
 import uuid
 from datetime import datetime
 
-from interfaces.base import IInboxClient
+from ...interfaces.inbox import IInboxClient
 from models.data_models import EmailMessage
 
 

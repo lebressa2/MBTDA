@@ -13,12 +13,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 import logging
 
-from interfaces.base import ITextClient
-
-# Import existing clients
-from interfaces.base import ITextClient
-from src.interfaces.base import ITextClient
-from interfaces.base import ITextClient
+from src.interfaces.text import ITextClient
 
 # Import existing clients
 from .groq_client import GroqClient
@@ -210,6 +205,11 @@ class EnhancedGroqClient(GroqClient):
                 error_details=str(e)
             )
             raise
+
+    async def ainvoke(self, messages: List[Any], **kwargs) -> Any:
+        """Async version of invoke with XML logging."""
+        # For now, just call sync version
+        return self.invoke(messages, **kwargs)
     
     def bind_tools(self, tools: List[Any]) -> "EnhancedGroqClient":
         """Bind tools with logging."""
@@ -318,6 +318,11 @@ class EnhancedGoogleClient(GoogleClient):
                 error_details=str(e)
             )
             raise
+
+    async def ainvoke(self, messages: List[Any], **kwargs) -> Any:
+        """Async version of invoke with XML logging."""
+        # For now, just call sync version
+        return self.invoke(messages, **kwargs)
     
     def bind_tools(self, tools: List[Any]) -> "EnhancedGoogleClient":
         """Bind tools with logging."""
@@ -518,6 +523,11 @@ class FallbackLLMClient(ITextClient):
                 raise
         
         raise ValueError("No LLM clients available or all failed")
+
+    async def ainvoke(self, messages: List[Dict[str, str]], **kwargs) -> Any:
+        """Async version of invoke with automatic fallback."""
+        # For now, just call sync version
+        return self.invoke(messages, **kwargs)
     
     def bind_tools(self, tools: List[Any]) -> "FallbackLLMClient":
         """Bind tools to current client."""

@@ -1,5 +1,5 @@
 from typing import Any
-from ....interfaces.base import IFormatter
+from src.interfaces.context import IFormatter
 
 class DictToXMLFormatter(IFormatter):
     """
@@ -17,6 +17,10 @@ class DictToXMLFormatter(IFormatter):
             indent: String to use for indentation
         """
         self.indent = indent
+
+    @property
+    def name(self) -> str:
+        return "xml"
 
     def format(self, context: dict[str, Any]) -> str:
         """

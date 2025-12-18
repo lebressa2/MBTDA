@@ -26,69 +26,7 @@ class LogLevel(Enum):
 # CONTEXT PROVIDER INTERFACE (Base for context-injecting components)
 # ==============================================================================
 
-class IContextProvider(ABC):
-    """
-    Base interface for components that contribute to the agent's context.
-    
-    Components implementing this interface can automatically inject their
-    context into the agent's system prompt. The Agent will collect all
-    contributions and merge them into the final context.
-    
-    Attributes:
-        inject_context: Flag to enable/disable automatic context injection.
-                       Defaults to True.
-    
-    Example:
-        class MyComponent(IContextProvider):
-            inject_context: bool = True
-            
-            def get_context_contribution(self) -> dict[str, Any]:
-                return {
-                    "my_component": {
-                        "status": "active",
-                        "data": self.get_data()
-                    }
-                }
-    """
-    
-    # Internal flag for context injection
-    _should_contribute: bool = True
-
-    @property
-    def should_contribute(self) -> bool:
-        """
-        Flag to enable/disable automatic context injection.
-        Replaces 'inject_context'.
-        """
-        return self._should_contribute
-
-    @should_contribute.setter
-    def should_contribute(self, value: bool) -> None:
-        self._should_contribute = value
-
-    @property
-    def inject_context(self) -> bool:
-        """Deprecated: Use should_contribute instead."""
-        return self._should_contribute
-
-    @inject_context.setter
-    def inject_context(self, value: bool) -> None:
-        """Deprecated: Use should_contribute instead."""
-        self._should_contribute = value
-    
-    @abstractmethod
-    def get_context_contribution(self) -> dict[str, Any]:
-        """
-        Get the context contribution from this component.
-        
-        Returns a dictionary that will be deep-merged into the agent's
-        context. The structure should be designed to avoid key collisions
-        with other components.
-        
-        Returns:
-            dict[str, Any]: Context dictionary to be merged
-        """
-        pass
+# IContextProvider removed in Phase 2
 
     
 
@@ -160,15 +98,11 @@ class IFormatter(ABC):
         pass
 
 
-class IMemoryManager(IContextProvider):
+class IMemoryManager(ABC):
     """
     Interface for memory management.
 
     Handles short-term memory, long-term memory, and retrieval operations.
-    Automatically contributes to the agent's context via IContextProvider.
-    
-    The 'memory' key will be injected into the system prompt containing
-    recent messages and long-term memory keys.
     """
 
     @abstractmethod
@@ -191,23 +125,14 @@ class IMemoryManager(IContextProvider):
         """Retrieve relevant memories based on a query."""
         pass
 
-    @abstractmethod
-    def clear_short_term(self) -> None:
-        """Clear short-term memory."""
-        pass
-
-    # get_context_contribution() is inherited from IContextProvider and must be implemented
 
 
-class IToolManager(IContextProvider):
+class IToolManager(ABC):
     """
     Interface for tool management.
 
     Handles tool registration, execution, and retrieval.
     Tools are organized by context/category.
-    
-    Automatically contributes available tools to the agent's context
-    via IContextProvider.
     """
 
     @abstractmethod
@@ -239,12 +164,6 @@ class IToolManager(IContextProvider):
         """Get formatted descriptions of available tools."""
         pass
 
-    @abstractmethod
-    def execute_tool(self, tool_name: str, **kwargs) -> Any:
-        """Execute a tool by name with given arguments."""
-        pass
-
-    # get_context_contribution() is inherited from IContextProvider and must be implemented
 
 
 class IWatchdog(ABC):
@@ -388,16 +307,13 @@ class ILifeCycle(ABC):
         pass
 
 
-class IWorkspaceManager(IContextProvider):
+class IWorkspaceManager(ABC):
     """
     Interface for workspace management.
 
     Manages the isolated environment (physical or virtual) where the agent works.
     Provides a controlled sandbox for file operations, version control,
     and computational environments.
-    
-    Automatically contributes workspace information to the agent's context
-    via IContextProvider (e.g., base path, available files, operations).
     """
 
     @abstractmethod
@@ -465,12 +381,6 @@ class IWorkspaceManager(IContextProvider):
         """Execute a command in the isolated environment."""
         pass
 
-    @abstractmethod
-    def get_audit_log(self) -> list[dict[str, Any]]:
-        """Get the audit log of all workspace actions."""
-        pass
-
-    # get_context_contribution() is inherited from IContextProvider and must be implemented
 
 
 # ==============================================================================
@@ -595,10 +505,9 @@ class ITaskManager(ABC):
 from abc import abstractmethod
 from typing import Any, List
 
-from .base import IContextProvider
 
 
-class IKnowledgeBase(IContextProvider):
+class IKnowledgeBase(ABC):
     """
     Interface for Knowledge Base implementations with RAG capabilities.
     
@@ -618,8 +527,6 @@ class IKnowledgeBase(IContextProvider):
     - Chunking strategies for large documents
     """
     
-    # Flag for automatic context injection (can be overridden by implementations)
-    inject_context: bool = True
     
     # ==========================================================================
     # CORE STORAGE OPERATIONS
@@ -874,32 +781,6 @@ class IKnowledgeBase(IContextProvider):
         """
         pass
     
-    # ==========================================================================
-    # CONTEXT PROVIDER IMPLEMENTATION
-    # ==========================================================================
-    
-    @abstractmethod
-    def get_context_contribution(self) -> dict[str, Any]:
-        """
-        Provide knowledge base information for agent context.
-        
-        This is called automatically by the Agent during prompt building
-        if inject_context=True.
-        
-        Returns:
-            dict: Context data to add to agent's system prompt
-            
-        Example return:
-            {
-                "knowledge_base": {
-                    "available": True,
-                    "collections": ["docs", "policies"],
-                    "total_documents": 150,
-                    "retrieval_instructions": "Use retrieve() to search relevant info"
-                }
-            }
-        """
-        pass
     
     # ==========================================================================
     # UTILITY & CONFIGURATION
@@ -959,7 +840,7 @@ class IKnowledgeBase(IContextProvider):
         """
         pass
 
-class IKnowledgeBaseAsync(IContextProvider):
+class IKnowledgeBaseAsync(ABC):
     """
     Async version of IKnowledgeBase for non-blocking operations.
     
@@ -967,7 +848,6 @@ class IKnowledgeBaseAsync(IContextProvider):
     without blocking the event loop (e.g., in FastAPI, Discord bots).
     """
     
-    inject_context: bool = True
 
     # ==========================================================================
     # CORE STORAGE OPERATIONS
@@ -1083,25 +963,6 @@ class IKnowledgeBaseAsync(IContextProvider):
         """Async version of list_collections."""
         pass
 
-    @abstractmethod
-    async def get_collection_stats(self, name: str) -> dict[str, Any]:
-        """Async version of get_collection_stats."""
-        pass
-
-    # ==========================================================================
-    # CONTEXT PROVIDER IMPLEMENTATION
-    # ==========================================================================
-
-    @abstractmethod
-    async def get_context_contribution(self) -> dict[str, Any]:
-        """Async version of get_context_contribution."""
-        pass
-
-    # ==========================================================================
-    # UTILITY & CONFIGURATION
-    # ==========================================================================
-
-    @abstractmethod
     async def clear(self, collection: str | None = None) -> bool:
         """Async version of clear."""
         pass

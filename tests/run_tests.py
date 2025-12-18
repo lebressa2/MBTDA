@@ -19,7 +19,7 @@ import os
 import tempfile
 import shutil
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Dict, List
 from enum import Enum
 
 # Add project root to path
@@ -28,11 +28,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from langchain_core.tools import tool
 
 from src.agent import Agent
-from src.components.context_manager import ContextManager
-from src.components.memory import InMemoryManager
-from src.components.tools import ToolManager
-from src.components.workspace import WorkspaceManager
-from src.interfaces.base import IContextProvider
+from src.components import ContextManager
+from src.components import InMemoryManager
+from src.components import ToolManager
+from src.components import WorkspaceManager
 
 
 # =============================================================================
@@ -115,9 +114,9 @@ def get_text_client():
 # =============================================================================
 
 def test_interface_implementation() -> bool:
-    """Verify all components implement IContextProvider correctly."""
+    """Verify all components implement get_snapshot correctly."""
     print_header(1, "Interface Implementation", 
-                 "Verify components implement IContextProvider")
+                 "Verify components implement get_snapshot")
     
     try:
         print_step(1, "Creating components")
@@ -126,30 +125,16 @@ def test_interface_implementation() -> bool:
         temp_dir = tempfile.mkdtemp()
         workspace = WorkspaceManager(temp_dir)
         
-        print_step(2, "Checking IContextProvider implementation")
+        print_step(2, "Checking get_snapshot method")
         
-        assert isinstance(memory, IContextProvider)
-        print_success("InMemoryManager implements IContextProvider")
+        assert hasattr(memory, 'get_snapshot')
+        print_success("InMemoryManager has get_snapshot method")
         
-        assert isinstance(tools, IContextProvider)
-        print_success("ToolManager implements IContextProvider")
+        assert hasattr(tools, 'get_snapshot')
+        print_success("ToolManager has get_snapshot method")
         
-        assert isinstance(workspace, IContextProvider)
-        print_success("WorkspaceManager implements IContextProvider")
-        
-        print_step(3, "Checking inject_context flag")
-        
-        assert memory.inject_context is True
-        assert tools.inject_context is True
-        assert workspace.inject_context is True
-        print_success("All components have inject_context=True by default")
-        
-        print_step(4, "Checking get_context_contribution method")
-        
-        assert hasattr(memory, 'get_context_contribution')
-        assert hasattr(tools, 'get_context_contribution')
-        assert hasattr(workspace, 'get_context_contribution')
-        print_success("All components have get_context_contribution method")
+        assert hasattr(workspace, 'get_snapshot')
+        print_success("WorkspaceManager has get_snapshot method")
         
         shutil.rmtree(temp_dir, ignore_errors=True)
         print_result(True, "All interfaces correctly implemented")
@@ -181,30 +166,28 @@ def test_context_contribution_structure() -> bool:
         
         temp_dir = tempfile.mkdtemp()
         workspace = WorkspaceManager(temp_dir)
-        workspace.create_file("test.txt", "content")
+        workspace.create_file("notes.txt", "content")
         
-        print_step(2, "Getting contributions")
+        print_step(2, "Getting snapshots")
         
-        mem_ctx = memory.get_context_contribution()
-        tool_ctx = tools.get_context_contribution()
-        ws_ctx = workspace.get_context_contribution()
+        mem_ctx = memory.get_snapshot()
+        tool_ctx = tools.get_snapshot()
+        ws_ctx = workspace.get_snapshot()
         
         print_step(3, "Verifying memory structure")
-        assert "memory" in mem_ctx
-        assert "recent_messages" in mem_ctx["memory"]
-        assert "long_term_keys" in mem_ctx["memory"]
-        print_success(f"Memory keys: {list(mem_ctx['memory'].keys())}")
+        assert "recent_messages" in mem_ctx
+        assert "long_term_keys" in mem_ctx
+        print_success(f"Memory keys: {list(mem_ctx.keys())}")
         
         print_step(4, "Verifying tools structure")
-        assert "available_tools" in tool_ctx
-        print_success(f"Tools: {tool_ctx['available_tools'][:50]}...")
+        assert "test_tool" in tool_ctx
+        print_success(f"Tools: {list(tool_ctx.keys())}")
         
         print_step(5, "Verifying workspace structure")
-        assert "workspace" in ws_ctx
-        assert "base_path" in ws_ctx["workspace"]
-        assert "files" in ws_ctx["workspace"]
-        assert "storage" in ws_ctx["workspace"]
-        print_success(f"Workspace keys: {list(ws_ctx['workspace'].keys())}")
+        assert "base_path" in ws_ctx
+        assert "files" in ws_ctx
+        assert "storage" in ws_ctx
+        print_success(f"Workspace keys: {list(ws_ctx.keys())}")
         
         shutil.rmtree(temp_dir, ignore_errors=True)
         print_result(True, "All structures correct")
@@ -212,69 +195,58 @@ def test_context_contribution_structure() -> bool:
         
     except Exception as e:
         print_fail(str(e))
+        import traceback
+        traceback.print_exc()
         return False
 
 
 def test_disabled_injection() -> bool:
-    """Verify inject_context=False prevents injection."""
-    print_header(1, "Disabled Context Injection",
-                 "Verify inject_context=False prevents automatic injection")
+    """Verify that context is NOT injected if not explicitly added."""
+    print_header(1, "Disabled Injection (Explicit Model)",
+                 "Verify context is only present if explicitly added")
     
     try:
-        print_step(1, "Creating components with inject_context=False")
+        print_step(1, "Creating components and agent")
         
-        memory = InMemoryManager(inject_context=False)
-        tools = ToolManager(inject_context=False)
-        temp_dir = tempfile.mkdtemp()
-        workspace = WorkspaceManager(temp_dir, inject_context=False)
-        
-        print_success(f"Memory: inject_context={memory.inject_context}")
-        print_success(f"Tools: inject_context={tools.inject_context}")
-        print_success(f"Workspace: inject_context={workspace.inject_context}")
-        
-        print_step(2, "Adding data to components")
-        memory.add_message("user", "secret")
-        workspace.create_file("secret.txt", "content")
-        
-        print_step(3, "Creating Agent and collecting context")
+        memory = InMemoryManager()
+        memory.add_message("user", "Secret")
         
         class MockClient:
             def invoke(self, m, **k): return type('R', (), {'content': 'ok'})()
             def bind_tools(self, t): return self
             def get_model_name(self): return "mock"
+            async def ainvoke(self, m, **k): return self.invoke(m, **k)
         
         context = ContextManager()
         agent = Agent(
             text_provider=MockClient(),
             context=context,
-            memory=memory,
-            tools=tools,
-            workspace_manager=workspace
+            memory=memory
         )
         
-        agent._collect_context_contributions()
-        raw = context.get_raw_context()
+        print_step(2, "Checking system prompt without explicit add")
         
-        print_step(4, "Verifying no injection occurred")
+        system_prompt = agent.build_system_prompt()
         
-        assert "memory" not in raw
-        print_success("Memory NOT injected")
+        assert "Secret" not in system_prompt
+        assert "memory" not in system_prompt.lower()
+        print_success("Context is empty (as expected in explicit model)")
         
-        assert "available_tools" not in raw
-        print_success("Tools NOT injected")
+        print_step(3, "Explicitly adding context")
         
-        assert "workspace" not in raw
-        print_success("Workspace NOT injected")
+        agent.context.add("memory", memory.get_snapshot())
+        system_prompt_updated = agent.build_system_prompt()
         
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        print_result(True, "Disabled injection working correctly")
+        assert "recent_messages" in system_prompt_updated
+        print_success("Context present after explicit add")
+        
         return True
         
     except Exception as e:
         print_fail(str(e))
+        import traceback
+        traceback.print_exc()
         return False
-
-
 
 
 # =============================================================================
@@ -320,24 +292,21 @@ def test_system_prompt_xml_structure() -> bool:
             context=context,
             memory=memory,
             tools=tools,
-            workspace_manager=workspace
         )
         
-        print_success(f"Agent created with all components")
+        # Explicitly add context
+        context.add("memory", memory.get_snapshot())
+        context.add("available_tools", tools.get_snapshot())
+        context.add("workspace", workspace.get_snapshot())
         
-        print_step(2, "Building system prompt (without LLM call)")
-        
-        system_prompt = agent._build_system_prompt()
+        system_prompt = agent.build_system_prompt()
         
         print_xml("RAW SYSTEM PROMPT", system_prompt)
         
         print_step(3, "Verifying XML elements present")
 
         # Check for key XML tags
-        assert "<memory>" in system_prompt or "recent_messages" in system_prompt
-        print_success("Found memory section")
-        
-        assert "<memory>" in system_prompt or "recent_messages" in system_prompt
+        assert "recent_messages" in system_prompt
         print_success("Found memory section")
         
         assert "calculate" in system_prompt or "get_time" in system_prompt
@@ -357,10 +326,6 @@ def test_system_prompt_xml_structure() -> bool:
         return False
 
 
-
-
-
-
 # =============================================================================
 # LEVEL 3: REAL CHATBOT SIMULATION
 # =============================================================================
@@ -374,7 +339,7 @@ def test_chatbot_multi_turn() -> bool:
         print_step(1, "Setting up chatbot environment")
         
         text_client = get_text_client()
-        memory = InMemoryManager(short_term_limit=50)
+        memory = InMemoryManager()
         tools = ToolManager()
         temp_dir = tempfile.mkdtemp()
         workspace = WorkspaceManager(temp_dir)
@@ -409,7 +374,6 @@ def test_chatbot_multi_turn() -> bool:
             context=context,
             memory=memory,
             tools=tools,
-            workspace_manager=workspace
         )
         
         print_success("Agent ready with all components")
@@ -428,13 +392,18 @@ def test_chatbot_multi_turn() -> bool:
             
             print(f"\n  {Colors.YELLOW}👤 USER:{Colors.ENDC} {user_msg}")
             
+            # Explicitly update context
+            context.add("memory", memory.get_snapshot())
+            context.add("available_tools", tools.get_snapshot())
+            context.add("workspace", workspace.get_snapshot())
+
             # Show system prompt before call
-            pre_prompt = agent._build_system_prompt()
+            pre_prompt = agent.build_system_prompt()
             print_xml(f"SYSTEM PROMPT (Turn {turn_num})", pre_prompt[:1500] + "..." if len(pre_prompt) > 1500 else pre_prompt)
             
             # Process message
             print(f"\n  {Colors.CYAN}⏳ Processing...{Colors.ENDC}")
-            response = agent.process_message(user_msg)
+            response = agent.chat(user_msg)
             response_text = str(response.content if hasattr(response, 'content') else response)
             
             # Show thinking (if visible in response)
@@ -507,19 +476,23 @@ def test_tool_usage_chain() -> bool:
             context=context,
             memory=memory,
             tools=tools,
-            workspace_manager=workspace
         )
+        
+        # Explicitly add context
+        context.add("memory", memory.get_snapshot())
+        context.add("available_tools", tools.get_snapshot())
+        context.add("workspace", workspace.get_snapshot())
         
         print_step(2, "Showing initial system prompt")
         
-        prompt = agent._build_system_prompt()
+        prompt = agent.build_system_prompt()
         print_xml("SYSTEM PROMPT WITH TOOLS", prompt)
         
         print_step(3, "Asking agent to use tools")
         
         print(f"\n  {Colors.YELLOW}👤 USER:{Colors.ENDC} Get the weather data, analyze it, and save a report.")
         
-        response = agent.process_message(
+        response = agent.chat(
             "Get the weather data, analyze it, and save a report."
         )
         
@@ -545,8 +518,6 @@ def test_tool_usage_chain() -> bool:
         import traceback
         traceback.print_exc()
         return False
-
-
 
 
 # =============================================================================

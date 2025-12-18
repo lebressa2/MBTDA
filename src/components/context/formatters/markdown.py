@@ -1,5 +1,5 @@
 from typing import Any
-from ....interfaces.base import IFormatter
+from src.interfaces.context import IFormatter
 
 class MarkdownFormatter(IFormatter):
     """
@@ -7,6 +7,10 @@ class MarkdownFormatter(IFormatter):
 
     Alternative formatter for agents that prefer Markdown prompts.
     """
+
+    @property
+    def name(self) -> str:
+        return "markdown"
 
     def format(self, context: dict[str, Any]) -> str:
         """

@@ -19,8 +19,8 @@ from typing import Any, Dict, List, Optional
 import chromadb
 from chromadb.config import Settings
 
-from ...interfaces.base import IKnowledgeBase, IEmbedderProvider
-from ...clients.embedder.mock_embedder import MockEmbedderProvider
+from src.interfaces.knowledge import IKnowledgeBase, IEmbedderProvider
+from src.clients.embedder.mock_embedder import MockEmbedderProvider
 
 
 class CustomEmbeddingFunction:
@@ -64,8 +64,7 @@ class ChromaKnowledgeBase(IKnowledgeBase):
         persist_directory: str = "./chroma_kb",
         embedder_provider: Optional[IEmbedderProvider] = None,
         chunk_size: int = 512,
-        chunk_overlap: int = 50,
-        inject_context: bool = True
+        chunk_overlap: int = 50
     ):
         """
         Initialize ChromaDB knowledge base.
@@ -75,14 +74,12 @@ class ChromaKnowledgeBase(IKnowledgeBase):
             embedder_provider: Embedding provider to use (defaults to MockEmbedderProvider)
             chunk_size: Default chunk size for long documents
             chunk_overlap: Overlap between chunks
-            inject_context: Whether to auto-inject context in prompts
         """
         self.persist_directory = Path(persist_directory)
         self.persist_directory.mkdir(parents=True, exist_ok=True)
 
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.inject_context = inject_context
 
         # Set up embedder provider
         self.embedder = embedder_provider or MockEmbedderProvider()
@@ -624,23 +621,16 @@ class ChromaKnowledgeBase(IKnowledgeBase):
     # CONTEXT PROVIDER IMPLEMENTATION
     # ==========================================================================
 
-    def get_context_contribution(self) -> Dict[str, Any]:
-        """
-        Provide knowledge base information for agent context.
-
-        Returns:
-            Dictionary with knowledge base information
-        """
+    def get_snapshot(self) -> Dict[str, Any]:
+        """Get a snapshot of the current knowledge base state for context injection."""
         collections = self.list_collections()
         total_docs = sum(self.count_documents(col) for col in collections) if collections else 0
 
         return {
-            "knowledge_base": {
-                "available": True,
-                "collections": collections,
-                "total_documents": total_docs,
-                "retrieval_instructions": "Use knowledge base methods to store and retrieve information"
-            }
+            "available": True,
+            "collections": collections,
+            "total_documents": total_docs,
+            "retrieval_instructions": "Use knowledge base methods to store and retrieve information"
         }
 
     # ==========================================================================

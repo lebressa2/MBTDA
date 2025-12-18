@@ -13,7 +13,7 @@ load_dotenv()
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.interfaces.base import ITextClient
+from src.interfaces.text import ITextClient
 
 
 class GroqTextClient(ITextClient):
@@ -60,6 +60,10 @@ class GroqTextClient(ITextClient):
         """Bind tools to the client (returns self for chaining)."""
         self._tools = tools
         return self
+    
+    async def ainvoke(self, messages: List[Dict[str, str]], **kwargs) -> Any:
+        """Async version of invoke (not implemented for tests)."""
+        return self.invoke(messages, **kwargs)
     
     def get_model_name(self) -> str:
         return self.model
@@ -108,6 +112,10 @@ class GoogleTextClient(ITextClient):
         """Bind tools to the client."""
         self._tools = tools
         return self
+    
+    async def ainvoke(self, messages: List[Dict[str, str]], **kwargs) -> Any:
+        """Async version of invoke (not implemented for tests)."""
+        return self.invoke(messages, **kwargs)
     
     def get_model_name(self) -> str:
         return self.model_name

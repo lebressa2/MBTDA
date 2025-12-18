@@ -5,7 +5,7 @@ Mock Task Client for testing and development.
 import uuid
 from datetime import datetime
 
-from ..interfaces.base import ITaskManager
+from ...interfaces.tasks import ITaskManager
 from models.data_models import TaskItem, TaskStatus
 
 

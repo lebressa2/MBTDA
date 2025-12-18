@@ -18,9 +18,10 @@ from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.interfaces.base import ITextClient, LogLevel
+from src.interfaces.text import ITextClient
+from src.interfaces.logging import LogLevel
 from src.agent import Agent
-from src.agents.react_agent import create_simple_agent
+from src.agent import Agent
 from src.components import (
     ConsoleLogger, InMemoryManager, ToolManager, WorkspaceManager, LocalWorkspaceManager
 )
@@ -67,8 +68,7 @@ def test_basic_agent():
         text_client = get_text_client()
         
         # Create agent with minimal components
-        # Use create_simple_agent to get the standard behavior
-        agent = create_simple_agent(
+        agent = Agent(
             text_provider=text_client,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
         )
@@ -76,7 +76,7 @@ def test_basic_agent():
         print(f"\n🤖 Agent created successfully")
 
         # Process a simple message
-        response = agent.process_message("What is 2 + 2? Answer briefly.")
+        response = agent.chat("What is 2 + 2? Answer briefly.")
 
         print(f"\n💬 Response: {response}")
         print("📊 Agent processed message successfully")
@@ -105,7 +105,7 @@ def test_agent_with_memory():
         text_client = get_text_client()
         memory = InMemoryManager(short_term_limit=10)
         
-        agent = create_simple_agent(
+        agent = Agent(
             text_provider=text_client,
             memory=memory,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
@@ -113,12 +113,12 @@ def test_agent_with_memory():
         
         # First message
         print("\n📝 Sending first message...")
-        response1 = agent.process_message("My name is Carlos. Remember that.")
+        response1 = agent.chat("My name is Carlos. Remember that.")
         print(f"💬 Response 1: {response1}")
         
         # Second message - should remember context
         print("\n📝 Sending second message...")
-        response2 = agent.process_message("What is my name?")
+        response2 = agent.chat("What is my name?")
         print(f"💬 Response 2: {response2}")
         
         # Check memory
@@ -195,7 +195,7 @@ def test_agent_with_tools():
             )
         )
         
-        agent = create_simple_agent(
+        agent = Agent(
             text_provider=text_client,
             tools=tool_manager,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
@@ -211,7 +211,7 @@ def test_agent_with_tools():
         assert result == 8, "Tool execution failed"
         
         # Ask agent to use tool (note: may not trigger tool call depending on LLM)
-        response = agent.process_message("What is 15 multiplied by 7? Calculate it.")
+        response = agent.chat("What is 15 multiplied by 7? Calculate it.")
         print(f"\n💬 Response: {response}")
         
         print("\n✅ Tools Test PASSED")
@@ -252,9 +252,8 @@ def test_agent_with_workspace():
         if os.path.exists(workspace.base_path):
             shutil.rmtree(workspace.base_path)
         
-        agent = create_simple_agent(
+        agent = Agent(
             text_provider=text_client,
-            workspace_manager=workspace,
             logger=ConsoleLogger(min_level=LogLevel.INFO)
         )
         
@@ -336,12 +335,10 @@ def test_full_integration():
             )
         )
         
-        # Create fully configured agent
-        agent = create_simple_agent(
+        agent = Agent(
             text_provider=text_client,
             memory=memory,
             tools=tool_manager,
-            workspace_manager=workspace,
             logger=logger
         )
         
@@ -349,7 +346,7 @@ def test_full_integration():
         print(f"📊 Status: {agent.get_status()}")
         
         # Test conversation
-        response = agent.process_message(
+        response = agent.chat(
             "I'm testing the agent framework. Tell me something interesting about AI."
         )
         print(f"\n💬 Response: {str(response)[:200]}...")
