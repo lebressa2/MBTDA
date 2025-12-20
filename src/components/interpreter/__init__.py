@@ -1,10 +1,7 @@
 """
-Interpreter Components Package.
-
-Provides code execution in a sandboxed environment:
-- SandboxInterpreter: Execute Python with pre-configured modules
+Interpreter components for the Agent Framework.
 """
 
-from .sandbox import SandboxInterpreter
+from .manager import SandboxInterpreter
 
 __all__ = ["SandboxInterpreter"]

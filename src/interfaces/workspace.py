@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, List, Dict, Optional
 from pathlib import Path
+from src.models.data_models import Tool
 
 class IWorkspaceManager(ABC):
     """
@@ -55,4 +56,9 @@ class IWorkspaceManager(ABC):
     @abstractmethod
     def execute_command(self, command: str, timeout: float | None = None) -> Dict[str, Any]:
         """Execute a command in the isolated environment."""
+        pass
+
+    @abstractmethod
+    def get_tools(self) -> List[Tool]:
+        """Get the list of atomic tools provided by this workspace."""
         pass

@@ -184,7 +184,7 @@ class TemplateRegistry:
         })
 
         # Use it
-        context = ContextManager(template="my_agent")
+        composer = PromptComposer(template="my_agent")
     """
 
     _custom_templates: dict[str, dict[str, Any]] = {}

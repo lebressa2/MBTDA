@@ -1,23 +1,12 @@
-from .manager import (
-    ContextManager,
-    MetaData,
-)
-from .formatters import (
-    DictToXMLFormatter,
-    MarkdownFormatter,
-)
-from .templates import (
-    SystemPromptTemplate,
-    SYSTEM_PROMPT_TEMPLATES,
-    TemplateRegistry,
-)
+"""
+Context component for the Agent Framework.
+"""
+
+from .composer import PromptComposer, MetaData
+from .templates.registry import TemplateRegistry
 
 __all__ = [
-    "ContextManager",
-    "DictToXMLFormatter",
-    "MarkdownFormatter",
+    "PromptComposer",
     "MetaData",
-    "SystemPromptTemplate",
-    "SYSTEM_PROMPT_TEMPLATES",
     "TemplateRegistry",
 ]

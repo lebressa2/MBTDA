@@ -1,8 +1,8 @@
 """
-Context Manager for the Agent Framework.
+Prompt Composer for the Agent Framework.
 
-Manages the agent's context dictionary which forms the system prompt.
-Supports protocols, dynamic context injection, and template factories.
+Composes the system prompt from templates, metadata, and manual contributions.
+Acts as a 'dumb' structure for assembling prompt components.
 """
 
 import re
@@ -32,8 +32,8 @@ class MetaData(BaseModel):
     and can be interpolated in the system prompt using {meta.field} syntax.
 
     Example:
-        context.meta.agent_name = "Assistant"
-        context.add("greeting", "Hello, I am {meta.agent_name}")
+        composer.meta.agent_name = "Assistant"
+        composer.add("greeting", "Hello, I am {meta.agent_name}")
         # Result: "Hello, I am Assistant"
     """
     # Agent identity
@@ -120,47 +120,17 @@ def _deep_merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[st
 from .formatters import DictToXMLFormatter, MarkdownFormatter
 
 
-class ContextManager:
+class PromptComposer:
     """
-    Manages the agent's context for system prompt generation.
+    Composes the agent's system prompt from templates and dynamic context.
 
-    The ContextManager maintains a dictionary of context elements
-    that are formatted into the agent's system prompt. It supports:
+    The PromptComposer maintains a dictionary of context elements
+    that are formatted into the agent's system prompt. It is a 'dumb'
+    structure for assembling components:
 
-    - **Templates (Dictionaries)**: Pre-defined context structures that define
-      the base context. Templates are DICTS, not strings.
-    - **Dynamic Context (context.add)**: Add or override any field. Works in
-      harmony with templates - templates provide base, add() extends/overrides.
-    - **Dynamic Variables**: MetaData model with auto-updating fields
-      that can be referenced using {meta.field} syntax in string values.
-    - **Protocols**: Structured procedures for specific task types
-
-    Key Design:
-        - Templates are dictionaries that define base context structure
-        - context.add(key, value) adds/overrides fields in the context
-        - Template + context.add() are MERGED (deep merge) when generating output
-        - Values can be ANY type (strings, dicts, lists, objects with __str__)
-        - String values support {meta.field} interpolation
-
-    Attributes:
-        _template: Base template dictionary (from TemplateRegistry or custom)
-        context: Dynamic context entries added via add()
-        protocols: Dictionary of registered Protocol objects
-        formatter: IFormatter instance for formatting context
-        meta: MetaData instance for dynamic variables
-
-    Example:
-        # Using a template (dictionary-based)
-        context = ContextManager(template="general_assistant")
-        context.meta.agent_name = "MyAgent"
-
-        # Add/override context - works in harmony with template
-        context.add("custom_field", "my value")
-        context.add("identity", {"name": "Override"})  # Overrides template's identity
-
-        # Any parseable value works
-        context.add("timestamp", datetime.now())  # Will be str() when formatted
-        context.add("config", some_pydantic_model)  # Uses __str__ or model_dump
+    - **Templates (Dictionaries)**: Pre-defined context structures.
+    - **Dynamic Context (add)**: Manual field overrides.
+    - **Metadata**: Auto-updating variables (date, time, etc).
     """
 
     # Class-level default formatter
@@ -177,12 +147,11 @@ class ContextManager:
         initial_context: dict[str, Any] | None = None
     ):
         """
-        Initialize the ContextManager.
+        Initialize the PromptComposer.
 
         Args:
             formatter: Optional formatter to use (defaults to DictToXMLFormatter)
-            template: Template name (string) to load from registry, or a custom
-                     template dictionary. Templates define the base context structure.
+            template: Template name (string) or dictionary.
             meta: Optional MetaData instance for dynamic variables
             initial_context: Dictionary of context items to add immediately
         """
@@ -228,16 +197,16 @@ class ContextManager:
         cls,
         agent_name: str = "Agent",
         agent_role: str = "AI Assistant"
-    ) -> "ContextManager":
+    ) -> "PromptComposer":
         """
-        Create a minimal ContextManager with just identity.
+        Create a minimal PromptComposer with just identity.
 
         Args:
             agent_name: Name of the agent
             agent_role: Role/persona of the agent
 
         Returns:
-            ContextManager configured with minimal template
+            PromptComposer configured with minimal template
         """
         meta = MetaData(agent_name=agent_name, agent_role=agent_role)
         return cls(template="minimal", meta=meta)
@@ -249,9 +218,9 @@ class ContextManager:
         agent_role: str = "AI Assistant",
         user_name: str | None = None,
         session_id: str | None = None
-    ) -> "ContextManager":
+    ) -> "PromptComposer":
         """
-        Create a general-purpose assistant ContextManager.
+        Create a general-purpose assistant PromptComposer.
 
         Includes detailed explanations of states and protocols
         suitable for most use cases.
@@ -263,7 +232,7 @@ class ContextManager:
             session_id: Optional session identifier
 
         Returns:
-            ContextManager configured with general assistant template
+            PromptComposer configured with general assistant template
         """
         meta = MetaData(
             agent_name=agent_name,
@@ -278,9 +247,9 @@ class ContextManager:
         cls,
         agent_name: str = "TaskAgent",
         session_id: str | None = None
-    ) -> "ContextManager":
+    ) -> "PromptComposer":
         """
-        Create a task-oriented agent ContextManager.
+        Create a task-oriented agent PromptComposer.
 
         Optimized for structured task execution with protocols.
 
@@ -289,7 +258,7 @@ class ContextManager:
             session_id: Optional session identifier
 
         Returns:
-            ContextManager configured with task agent template
+            PromptComposer configured with task agent template
         """
         meta = MetaData(
             agent_name=agent_name,
@@ -303,9 +272,9 @@ class ContextManager:
         cls,
         agent_name: str = "Monitor",
         session_id: str | None = None
-    ) -> "ContextManager":
+    ) -> "PromptComposer":
         """
-        Create a reactive/monitoring agent ContextManager.
+        Create a reactive/monitoring agent PromptComposer.
 
         Optimized for event-driven operation with inbox and task monitoring.
 
@@ -314,7 +283,7 @@ class ContextManager:
             session_id: Optional session identifier
 
         Returns:
-            ContextManager configured with reactive agent template
+            PromptComposer configured with reactive agent template
         """
         meta = MetaData(
             agent_name=agent_name,
@@ -330,9 +299,9 @@ class ContextManager:
         agent_name: str = "Agent",
         agent_role: str = "AI Assistant",
         **meta_kwargs: Any
-    ) -> "ContextManager":
+    ) -> "PromptComposer":
         """
-        Create a ContextManager with a custom template dictionary.
+        Create a PromptComposer with a custom template dictionary.
 
         Args:
             template: Custom template dictionary
@@ -341,10 +310,10 @@ class ContextManager:
             **meta_kwargs: Additional MetaData fields (e.g., user_name, session_id)
 
         Returns:
-            ContextManager configured with custom template
+            PromptComposer configured with custom template
 
         Example:
-            context = ContextManager.create_from_template(
+            composer = PromptComposer.create_from_template(
                 template={
                     "identity": {"name": "{meta.agent_name}"},
                     "custom_section": {"key": "value"}
@@ -461,14 +430,14 @@ class ContextManager:
 
         Example:
             # Simple values
-            context.add("greeting", "Hello {meta.user_name}!")
-            context.add("timestamp", datetime.now())  # Any __str__ object
+            composer.add("greeting", "Hello {meta.user_name}!")
+            composer.add("timestamp", datetime.now())  # Any __str__ object
 
             # Override template section
-            context.add("identity", {"custom_field": "value"})
+            composer.add("identity", {"custom_field": "value"})
 
             # f-strings work naturally
-            context.add("info", f"Generated at {time.time()}")
+            composer.add("info", f"Generated at {time.time()}")
         """
         self.context[key] = value
 
@@ -545,7 +514,7 @@ class ContextManager:
 
         This method:
         1. Starts with the template dictionary as base
-        2. Deep merges dynamic context (context.add() values)
+        2. Deep merges dynamic context (composer.add() values)
         3. Adds protocol information
         4. Interpolates all {meta.field} variables
         5. Formats using the configured formatter
