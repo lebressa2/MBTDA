@@ -1,15 +1,15 @@
 from typing import Any, Optional
 import os
 
-from ...interfaces.base import ITextClient
+from ...interfaces.text import ITextClient
 
 # Lazy Import Strategy
+HAS_GROQ = False
 try:
-    from langchain_groq import ChatGroq
-    from langchain_core.messages import BaseMessage
+    import langchain_groq
     HAS_GROQ = True
 except ImportError:
-    HAS_GROQ = False
+    pass
 
 
 class GroqClient(ITextClient):
@@ -38,6 +38,8 @@ class GroqClient(ITextClient):
         if not self.api_key:
             raise ValueError("Groq API key not found. Please provide it or set GROQ_API_KEY environment variable.")
 
+        from langchain_groq import ChatGroq
+        
         self.client = ChatGroq(
             model_name=model_name,
             api_key=self.api_key,

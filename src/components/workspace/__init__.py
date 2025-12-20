@@ -1,4 +1,11 @@
-from .base import WorkspaceManager
-from .local import LocalWorkspaceManager
+"""
+Workspace components for the Agent Framework.
+"""
 
-__all__ = ["WorkspaceManager", "LocalWorkspaceManager"]
+from .manager import WorkspaceManager, LayeredWorkspaceManager, WorkspaceLayer
+
+__all__ = [
+    "WorkspaceManager",
+    "LayeredWorkspaceManager",
+    "WorkspaceLayer",
+]

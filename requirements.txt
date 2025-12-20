@@ -19,6 +19,10 @@ websockets>=12.0
 litellm>=1.0.0
 instructor>=0.4.0
 
+# Knowledge Base (Vector Storage)
+chromadb>=0.4.0          # Vector database for knowledge storage
+sentence-transformers>=2.2.0  # Embedding models
+
 # =============================================================================
 # 🧪 DESENVOLVIMENTO & TESTES
 # =============================================================================
